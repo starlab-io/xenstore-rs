@@ -1,0 +1,6 @@
+[package]
+name = "xenstore"
+version = "0.1.0"
+authors = ["Jonathan Creekmore <jonathan.creekmore@starlab.io>"]
+
+[dependencies]
