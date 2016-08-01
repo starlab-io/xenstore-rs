@@ -16,6 +16,8 @@
     with this program; if not, see <http://www.gnu.org/licenses/>.
 **/
 
+pub mod wire;
+
 #[cfg(test)]
 mod tests {
     #[test]
