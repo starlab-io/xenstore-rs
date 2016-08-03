@@ -7,4 +7,5 @@ authors = ["Jonathan Creekmore <jonathan.creekmore@starlab.io>",
             "Doug Goldstein <doug@starlab.io>"]
 
 [dependencies]
+lazy_static = "0.2.1"
 log = "^0.3"
