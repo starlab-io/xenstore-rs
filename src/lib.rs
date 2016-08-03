@@ -16,12 +16,14 @@
     with this program; if not, see <http://www.gnu.org/licenses/>.
 **/
 
+#[macro_use]
+extern crate log;
+
 pub mod error;
 pub mod wire;
 
 #[cfg(test)]
 mod tests {
     #[test]
-    fn it_works() {
-    }
+    fn it_works() {}
 }

@@ -7,3 +7,4 @@ authors = ["Jonathan Creekmore <jonathan.creekmore@starlab.io>",
             "Doug Goldstein <doug@starlab.io>"]
 
 [dependencies]
+log = "^0.3"
