@@ -69,3 +69,7 @@ pub const XENSTORE_REL_PATH_MAX: usize = 2048;
 pub const XENSTORE_SERVER_FEATURE_RECONNECTION: usize = 1;
 pub const XENSTORE_CONNECTED: usize = 0;
 pub const XENSTORE_RECONNECT: usize = 1;
+
+pub type ReqId = u32;
+pub type TxId = u32;
+pub type DomainId = u32;
