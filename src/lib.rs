@@ -24,6 +24,7 @@ extern crate log;
 
 pub mod error;
 pub mod wire;
+pub mod server;
 
 #[cfg(test)]
 mod tests {
