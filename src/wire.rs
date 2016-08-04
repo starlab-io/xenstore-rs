@@ -79,5 +79,5 @@ pub struct Header {
     pub msg_type: u32,
     pub req_id: ReqId,
     pub tx_id: TxId,
-    pub len: u32
+    pub len: u32,
 }
