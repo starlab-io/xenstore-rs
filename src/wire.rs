@@ -17,29 +17,29 @@
 **/
 
 /// XenStore message types
-pub const XS_DEBUG: u16 = 0;
-pub const XS_DIRECTORY: u16 = 1;
-pub const XS_READ: u16 = 2;
-pub const XS_GET_PERMS: u16 = 3;
-pub const XS_WATCH: u16 = 4;
-pub const XS_UNWATCH: u16 = 5;
-pub const XS_TRANSACTION_START: u16 = 6;
-pub const XS_TRANSACTION_END: u16 = 7;
-pub const XS_INTRODUCE: u16 = 8;
-pub const XS_RELEASE: u16 = 9;
-pub const XS_GET_DOMAIN_PATH: u16 = 10;
-pub const XS_WRITE: u16 = 11;
-pub const XS_MKDIR: u16 = 12;
-pub const XS_RM: u16 = 13;
-pub const XS_SET_PERMS: u16 = 14;
-pub const XS_WATCH_EVENT: u16 = 15;
-pub const XS_ERROR: u16 = 16;
-pub const XS_IS_DOMAIN_INTRODUCED: u16 = 17;
-pub const XS_RESUME: u16 = 18;
-pub const XS_SET_TARGET: u16 = 19;
-pub const XS_RESTRICT: u16 = 20;
-pub const XS_RESET_WATCHES: u16 = 21;
-pub const XS_INVALID: u16 = 0xffff;
+pub const XS_DEBUG: u32 = 0;
+pub const XS_DIRECTORY: u32 = 1;
+pub const XS_READ: u32 = 2;
+pub const XS_GET_PERMS: u32 = 3;
+pub const XS_WATCH: u32 = 4;
+pub const XS_UNWATCH: u32 = 5;
+pub const XS_TRANSACTION_START: u32 = 6;
+pub const XS_TRANSACTION_END: u32 = 7;
+pub const XS_INTRODUCE: u32 = 8;
+pub const XS_RELEASE: u32 = 9;
+pub const XS_GET_DOMAIN_PATH: u32 = 10;
+pub const XS_WRITE: u32 = 11;
+pub const XS_MKDIR: u32 = 12;
+pub const XS_RM: u32 = 13;
+pub const XS_SET_PERMS: u32 = 14;
+pub const XS_WATCH_EVENT: u32 = 15;
+pub const XS_ERROR: u32 = 16;
+pub const XS_IS_DOMAIN_INTRODUCED: u32 = 17;
+pub const XS_RESUME: u32 = 18;
+pub const XS_SET_TARGET: u32 = 19;
+pub const XS_RESTRICT: u32 = 20;
+pub const XS_RESET_WATCHES: u32 = 21;
+pub const XS_INVALID: u32 = 0xffff;
 
 /// XenStore error types
 pub const XSE_EINVAL: &'static str = "EINVAL";
@@ -73,3 +73,11 @@ pub const XENSTORE_RECONNECT: usize = 1;
 pub type ReqId = u32;
 pub type TxId = u32;
 pub type DomainId = u32;
+
+/// The `Header` type that is generic to all messages
+pub struct Header {
+    pub msg_type: u32,
+    pub req_id: ReqId,
+    pub tx_id: TxId,
+    pub len: u32
+}
