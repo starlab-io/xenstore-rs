@@ -7,6 +7,9 @@ authors = ["Jonathan Creekmore <jonathan.creekmore@starlab.io>",
             "Doug Goldstein <doug@starlab.io>"]
 
 [dependencies]
+docopt = "^0.6"
 lazy_static = "0.2.1"
 log = "^0.3"
 mio = "0.5.1"
+rustc-serialize = "^0.3"
+stderrlog = "^0.2.1"

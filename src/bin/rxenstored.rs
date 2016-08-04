@@ -1,0 +1,89 @@
+/**
+    xenstore-rs provides a Rust based xenstore implementation.
+    Copyright (C) 2016 Star Lab Corp.
+
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation; either version 2 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License along
+    with this program; if not, see <http://www.gnu.org/licenses/>.
+**/
+
+extern crate docopt;
+#[macro_use]
+extern crate log;
+extern crate mio;
+extern crate rustc_serialize;
+extern crate stderrlog;
+extern crate xenstore;
+
+use mio::unix::UnixListener;
+use std::fs::{DirBuilder, remove_file};
+use std::path::PathBuf;
+use xenstore::server::*;
+
+const UDS_PATH: &'static str = "/var/run/xenstored/socket";
+
+const USAGE: &'static str = "
+Usage: rxenstored [-q] [-v...]
+";
+
+#[derive(RustcDecodable)]
+struct Args {
+    flag_v: usize,
+    flag_q: bool,
+}
+
+fn main() {
+
+    let args: Args = docopt::Docopt::new(USAGE)
+        .and_then(|d| d.argv(std::env::args().into_iter()).decode())
+        .unwrap_or_else(|e| e.exit());
+
+    stderrlog::new()
+        .module(module_path!())
+        .module("xenstore")
+        .verbosity(args.flag_v)
+        .quiet(args.flag_q)
+        .init()
+        .unwrap();
+
+    // where our Unix Socket will live, we need to create the path to it
+    let uds_path = PathBuf::from(UDS_PATH);
+    let uds_dir = uds_path.parent().unwrap();
+
+    DirBuilder::new()
+        .recursive(true)
+        .create(uds_dir)
+        .ok()
+        .expect("Failed to created directory for unix socket");
+
+    let sock = UnixListener::bind(&uds_path)
+        .ok()
+        .expect("Failed to create unix socket");
+
+    let mut event_loop = mio::EventLoop::new()
+        .ok()
+        .expect("Failed to create event loop");
+
+    let mut server = Server::new(sock);
+
+    server.register(&mut event_loop)
+        .ok()
+        .expect("Failed register server socket to event loop");
+
+    event_loop.run(&mut server)
+        .ok()
+        .expect("Failed to start event loop");
+
+    remove_file(&uds_path)
+        .ok()
+        .expect("Failed to remove unix socket");
+}
