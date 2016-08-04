@@ -23,11 +23,7 @@ extern crate lazy_static;
 extern crate log;
 
 pub mod error;
+pub mod path;
+pub mod transaction;
 pub mod wire;
 pub mod server;
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {}
-}
