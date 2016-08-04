@@ -1,0 +1,51 @@
+image: starlabio/ubuntu-native-build:1.0.1
+
+cache:
+    paths:
+        - target/
+
+stages:
+    - format
+    - build
+    - test
+
+format:
+    stage: format
+    script:
+        - ./scripts/check-format
+    tags:
+        - docker-runner
+
+build:x86:
+    stage: build
+    script:
+        - cargo build
+    tags:
+        - docker-runner
+
+build:aarch64:
+    stage: build
+    script:
+        - export CC=aarch64-linux-gnu-gcc
+        - export AR=aarch64-linux-gnu-ar
+        - export ARCH=arm64
+        - cargo build --verbose --target=aarch64-unknown-linux-gnu
+    tags:
+        - docker-runner
+
+build:armhf:
+    stage: build
+    script:
+        - export CC=arm-linux-gnueabihf-gcc
+        - export AR=arm-linux-gnueabihf-ar
+        - export ARCH=arm
+        - cargo build --verbose --target=arm-unknown-linux-gnueabihf
+    tags:
+        - docker-runner
+
+test:x86:
+    stage: test
+    script:
+        - cargo test
+    tags:
+        - docker-runner
