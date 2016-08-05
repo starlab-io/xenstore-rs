@@ -17,6 +17,8 @@
 **/
 
 use error::{Error, Result};
+use rand::Rng;
+use std::boxed::Box;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, Arc};
@@ -71,9 +73,9 @@ pub type LockedTransaction = Arc<Mutex<RefCell<Transaction>>>;
 ///
 /// Used to access transactions by TxId as well as start and end transactions.
 #[derive(Debug)]
-pub struct TransactionList {
+pub struct TransactionList<R: Rng + ?Sized> {
     list: HashMap<wire::TxId, LockedTransaction>,
-    next_id: wire::TxId,
+    rng: Box<R>,
 }
 
 /// The `TransactionStatus` type.
@@ -87,9 +89,9 @@ pub enum TransactionStatus {
     Failure,
 }
 
-impl TransactionList {
+impl<R: Rng + ?Sized> TransactionList<R> {
     /// Create a new instance of the `TransactionList`.
-    pub fn new() -> TransactionList {
+    pub fn new(rng: Box<R>) -> TransactionList<R> {
         let root = Transaction {
             tx_id: ROOT_TRANSACTION,
             current_gen: 0,
@@ -100,9 +102,9 @@ impl TransactionList {
         let mut txns = HashMap::new();
         txns.insert(ROOT_TRANSACTION, Arc::new(Mutex::new(RefCell::new(root))));
 
-        TransactionList {
+        TransactionList::<R> {
             list: txns,
-            next_id: 1,
+            rng: rng,
         }
     }
 
@@ -118,11 +120,25 @@ impl TransactionList {
             .ok_or(Error::ENOENT(format!("failed to find transaction {}", tx_id)))
     }
 
+    /// Generate a random TxId
+    fn generate_txid(&mut self) -> wire::TxId {
+        loop {
+            // Get a random transaction id
+            let id = self.rng.next_u32();
+            // If the transaction id is not currently used
+            if !self.list.contains_key(&id) {
+                // make it the one we will use for this transaction
+                return id;
+            }
+        }
+    }
+
     /// Start a new transaction.
     ///
     /// Returns the `TxId` associated with the new transaction.
     pub fn start(&mut self) -> wire::TxId {
-        self.next_id += 1;
+
+        let next_id = self.generate_txid();
 
         let txn = {
             let mutex = self.list
@@ -133,15 +149,15 @@ impl TransactionList {
             let root = root_guard.borrow();
 
             Transaction {
-                tx_id: self.next_id,
+                tx_id: next_id,
                 current_gen: root.current_gen,
                 parent_gen: root.current_gen,
                 store: root.store.clone(),
             }
         };
 
-        self.list.insert(self.next_id, Arc::new(Mutex::new(RefCell::new(txn))));
-        self.next_id
+        self.list.insert(next_id, Arc::new(Mutex::new(RefCell::new(txn))));
+        next_id
     }
 
     /// End a transaction.
@@ -304,13 +320,38 @@ impl Transaction {
 
 #[cfg(test)]
 mod test {
+    use rand::{Rng, thread_rng};
+    use std::boxed::Box;
+    use std::num::Wrapping;
     use super::super::error::Error;
     use super::super::path::Path;
     use super::*;
 
     #[test]
+    fn check_transaction_id_reuse() {
+        struct TestRng {
+            next: Wrapping<u32>,
+        }
+
+        impl Rng for TestRng {
+            fn next_u32(&mut self) -> u32 {
+                let cur = self.next;
+                self.next += Wrapping(1);
+                cur.0
+            }
+        }
+
+        let mut txns = TransactionList::new(Box::new(TestRng { next: Wrapping(0) }));
+        assert_eq!(txns.start(), 1);
+
+        let mut txns = TransactionList::new(Box::new(TestRng { next: Wrapping(u32::max_value()) }));
+        assert_eq!(txns.start(), u32::max_value());
+        assert_eq!(txns.start(), 1);
+    }
+
+    #[test]
     fn write_basic_key() {
-        let txns = TransactionList::new();
+        let txns = TransactionList::new(Box::new(thread_rng()));
 
         let mutex = txns.get(ROOT_TRANSACTION).unwrap();
         let guard = mutex.lock().unwrap();
@@ -322,7 +363,7 @@ mod test {
 
     #[test]
     fn read_basic_key() {
-        let txns = TransactionList::new();
+        let txns = TransactionList::new(Box::new(thread_rng()));
 
         let mutex = txns.get(ROOT_TRANSACTION).unwrap();
         let guard = mutex.lock().unwrap();
@@ -342,7 +383,7 @@ mod test {
 
     #[test]
     fn write_all_parents() {
-        let txns = TransactionList::new();
+        let txns = TransactionList::new(Box::new(thread_rng()));
 
         let mutex = txns.get(ROOT_TRANSACTION).unwrap();
         let guard = mutex.lock().unwrap();
@@ -368,7 +409,7 @@ mod test {
 
     #[test]
     fn write_parent_exists() {
-        let txns = TransactionList::new();
+        let txns = TransactionList::new(Box::new(thread_rng()));
 
         let mutex = txns.get(ROOT_TRANSACTION).unwrap();
         let guard = mutex.lock().unwrap();
@@ -398,7 +439,7 @@ mod test {
 
     #[test]
     fn check_transaction_sees_original_state() {
-        let mut txns = TransactionList::new();
+        let mut txns = TransactionList::new(Box::new(thread_rng()));
 
         let path = Path::from(DOM0_DOMAIN_ID, "/basic/path");
         let value = Value::from("value");
@@ -428,7 +469,7 @@ mod test {
 
     #[test]
     fn check_transaction_no_external_writes() {
-        let mut txns = TransactionList::new();
+        let mut txns = TransactionList::new(Box::new(thread_rng()));
 
         let path = Path::from(DOM0_DOMAIN_ID, "/basic/path");
         let value = Value::from("value");
@@ -490,7 +531,7 @@ mod test {
 
     #[test]
     fn check_transaction_fails_no_external_writes() {
-        let mut txns = TransactionList::new();
+        let mut txns = TransactionList::new(Box::new(thread_rng()));
 
         let path = Path::from(DOM0_DOMAIN_ID, "/basic/path");
         let value = Value::from("value");
@@ -552,7 +593,7 @@ mod test {
 
     #[test]
     fn check_transaction_with_external_writes() {
-        let mut txns = TransactionList::new();
+        let mut txns = TransactionList::new(Box::new(thread_rng()));
 
         let path = Path::from(DOM0_DOMAIN_ID, "/basic/path");
         let value = Value::from("value");
@@ -617,7 +658,7 @@ mod test {
 
     #[test]
     fn mkdir_creates_empty_directories() {
-        let txns = TransactionList::new();
+        let txns = TransactionList::new(Box::new(thread_rng()));
 
         // Create the global state
         let mutex = txns.get(ROOT_TRANSACTION).unwrap();
@@ -644,7 +685,7 @@ mod test {
 
     #[test]
     fn mkdir_creates_root() {
-        let txns = TransactionList::new();
+        let txns = TransactionList::new(Box::new(thread_rng()));
 
         // Create the global state
         let mutex = txns.get(ROOT_TRANSACTION).unwrap();
@@ -664,7 +705,7 @@ mod test {
 
     #[test]
     fn subdirs_gets_subdirectories() {
-        let txns = TransactionList::new();
+        let txns = TransactionList::new(Box::new(thread_rng()));
 
         // Create the global state
         let mutex = txns.get(ROOT_TRANSACTION).unwrap();
@@ -694,7 +735,7 @@ mod test {
 
     #[test]
     fn rm_deletes_all_directories() {
-        let txns = TransactionList::new();
+        let txns = TransactionList::new(Box::new(thread_rng()));
 
         // Create the global state
         let mutex = txns.get(ROOT_TRANSACTION).unwrap();
