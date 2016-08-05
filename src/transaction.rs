@@ -221,7 +221,11 @@ impl Transaction {
     }
 
     /// Write a `Value` at `Path` inside of the current transaction.
-    pub fn write(self: &mut Transaction, path: Path, value: Value) -> Result<()> {
+    pub fn write(self: &mut Transaction,
+                 dom_id: wire::DomainId,
+                 path: Path,
+                 value: Value)
+                 -> Result<()> {
         let node = Node {
             value: value,
             children: HashSet::new(),
@@ -234,9 +238,11 @@ impl Transaction {
         // Ensure that the parent paths exist when creating a new path
         match path.parent() {
             Some(parent) => {
-                match self.read(&parent) {
+                match self.read(dom_id, &parent) {
                     // If the parent path did not exist, write the empty string for its value
-                    Err(Error::ENOENT(_)) => try!(self.write(parent.clone(), Value::from(""))),
+                    Err(Error::ENOENT(_)) => {
+                        try!(self.write(dom_id, parent.clone(), Value::from("")))
+                    }
                     Err(e) => return Err(e),
                     Ok(_) => (),
                 }
@@ -263,7 +269,7 @@ impl Transaction {
     /// # Errors
     ///
     /// * `Error::ENOENT` when the path does not exist in the transaction.
-    pub fn read(self: &Transaction, path: &Path) -> Result<Value> {
+    pub fn read(self: &Transaction, dom_id: wire::DomainId, path: &Path) -> Result<Value> {
         self.store
             .get(path)
             .ok_or(Error::ENOENT(format!("failed to find {:?}", path)))
@@ -271,8 +277,8 @@ impl Transaction {
     }
 
     /// Make a new directory `Path` inside of the current transaction.
-    pub fn mkdir(self: &mut Transaction, path: Path) -> Result<()> {
-        self.write(path, Value::from(""))
+    pub fn mkdir(self: &mut Transaction, dom_id: wire::DomainId, path: Path) -> Result<()> {
+        self.write(dom_id, path, Value::from(""))
     }
 
     /// Get a list of directories at `Path` inside the current transaction.
@@ -280,7 +286,10 @@ impl Transaction {
     /// # Errors
     ///
     /// * `Error::ENOENT` when the path does not exist in the transaction.
-    pub fn subdirs(self: &mut Transaction, path: &Path) -> Result<Vec<Basename>> {
+    pub fn subdirs(self: &mut Transaction,
+                   dom_id: wire::DomainId,
+                   path: &Path)
+                   -> Result<Vec<Basename>> {
         self.store
             .get(path)
             .ok_or(Error::ENOENT(format!("failed to find {:?}", path)))
@@ -299,7 +308,7 @@ impl Transaction {
     /// # Errors
     ///
     /// * `Error::ENOENT` when the path does not exist in the transaction.
-    pub fn rm(self: &mut Transaction, path: &Path) -> Result<()> {
+    pub fn rm(self: &mut Transaction, dom_id: wire::DomainId, path: &Path) -> Result<()> {
         let children = try!(self.store
             .get(path)
             .ok_or(Error::ENOENT(format!("failed to find {:?}", path)))
@@ -311,7 +320,7 @@ impl Transaction {
             }));
         for child in children {
             let path = path.push(&child);
-            try!(self.rm(&path));
+            try!(self.rm(dom_id, &path));
         }
 
         let _ = self.store.remove(path);
@@ -359,7 +368,9 @@ mod test {
         let guard = mutex.lock().unwrap();
         let mut trans = guard.borrow_mut();
 
-        trans.write(Path::from(DOM0_DOMAIN_ID, "/basic"), Value::from("value"))
+        trans.write(DOM0_DOMAIN_ID,
+                   Path::from(DOM0_DOMAIN_ID, "/basic"),
+                   Value::from("value"))
             .unwrap()
     }
 
@@ -374,10 +385,10 @@ mod test {
         let path = Path::from(DOM0_DOMAIN_ID, "/basic");
         let value = Value::from("value");
 
-        trans.write(path.clone(), value.clone())
+        trans.write(DOM0_DOMAIN_ID, path.clone(), value.clone())
             .unwrap();
 
-        let read = trans.read(&path)
+        let read = trans.read(DOM0_DOMAIN_ID, &path)
             .unwrap();
 
         assert_eq!(read, value);
@@ -395,15 +406,15 @@ mod test {
         let parent = Path::from(DOM0_DOMAIN_ID, "/basic");
         let value = Value::from("value");
 
-        trans.write(path.clone(), value.clone())
+        trans.write(DOM0_DOMAIN_ID, path.clone(), value.clone())
             .unwrap();
 
-        let read = trans.read(&path)
+        let read = trans.read(DOM0_DOMAIN_ID, &path)
             .unwrap();
 
         assert_eq!(read, value);
 
-        let read_parent = trans.read(&parent)
+        let read_parent = trans.read(DOM0_DOMAIN_ID, &parent)
             .unwrap();
 
         assert_eq!(read_parent, "");
@@ -422,18 +433,18 @@ mod test {
         let value = Value::from("value");
         let parent_value = Value::from("parent");
 
-        trans.write(parent.clone(), parent_value.clone())
+        trans.write(DOM0_DOMAIN_ID, parent.clone(), parent_value.clone())
             .unwrap();
 
-        trans.write(path.clone(), value.clone())
+        trans.write(DOM0_DOMAIN_ID, path.clone(), value.clone())
             .unwrap();
 
-        let read = trans.read(&path)
+        let read = trans.read(DOM0_DOMAIN_ID, &path)
             .unwrap();
 
         assert_eq!(read, value);
 
-        let read_parent = trans.read(&parent)
+        let read_parent = trans.read(DOM0_DOMAIN_ID, &parent)
             .unwrap();
 
         assert_eq!(read_parent, parent_value);
@@ -452,7 +463,7 @@ mod test {
             let guard = mutex.lock().unwrap();
             let mut global = guard.borrow_mut();
 
-            global.write(path.clone(), value.clone())
+            global.write(DOM0_DOMAIN_ID, path.clone(), value.clone())
                 .unwrap();
         }
 
@@ -463,7 +474,7 @@ mod test {
             let guard = mutex.lock().unwrap();
             let trans = guard.borrow();
             // And verify its state
-            let read = trans.read(&path)
+            let read = trans.read(DOM0_DOMAIN_ID, &path)
                 .unwrap();
             assert_eq!(read, value);
         }
@@ -482,7 +493,7 @@ mod test {
             let guard = mutex.lock().unwrap();
             let mut global = guard.borrow_mut();
 
-            global.write(path.clone(), value.clone())
+            global.write(DOM0_DOMAIN_ID, path.clone(), value.clone())
                 .unwrap();
         }
 
@@ -493,16 +504,16 @@ mod test {
             let guard = mutex.lock().unwrap();
             let mut trans = guard.borrow_mut();
             // And verify its state
-            let read = trans.read(&path)
+            let read = trans.read(DOM0_DOMAIN_ID, &path)
                 .unwrap();
             assert_eq!(read, value);
 
             // Write a new value for our path
             let new_value = Value::from("value2");
-            trans.write(path.clone(), new_value.clone())
+            trans.write(DOM0_DOMAIN_ID, path.clone(), new_value.clone())
                 .unwrap();
             // And verify the read
-            let read = trans.read(&path)
+            let read = trans.read(DOM0_DOMAIN_ID, &path)
                 .unwrap();
             assert_eq!(read, new_value);
 
@@ -511,7 +522,7 @@ mod test {
                 let mutex = txns.get(ROOT_TRANSACTION).unwrap();
                 let guard = mutex.lock().unwrap();
                 let global = guard.borrow_mut();
-                let read = global.read(&path)
+                let read = global.read(DOM0_DOMAIN_ID, &path)
                     .unwrap();
                 assert_eq!(read, value);
             }
@@ -524,7 +535,7 @@ mod test {
                 let mutex = txns.get(ROOT_TRANSACTION).unwrap();
                 let guard = mutex.lock().unwrap();
                 let global = guard.borrow_mut();
-                let read = global.read(&path)
+                let read = global.read(DOM0_DOMAIN_ID, &path)
                     .unwrap();
                 assert_eq!(read, new_value);
             }
@@ -544,7 +555,7 @@ mod test {
             let guard = mutex.lock().unwrap();
             let mut global = guard.borrow_mut();
 
-            global.write(path.clone(), value.clone())
+            global.write(DOM0_DOMAIN_ID, path.clone(), value.clone())
                 .unwrap();
         }
 
@@ -555,16 +566,16 @@ mod test {
             let guard = mutex.lock().unwrap();
             let mut trans = guard.borrow_mut();
             // And verify its state
-            let read = trans.read(&path)
+            let read = trans.read(DOM0_DOMAIN_ID, &path)
                 .unwrap();
             assert_eq!(read, value);
 
             // Write a new value for our path
             let new_value = Value::from("value2");
-            trans.write(path.clone(), new_value.clone())
+            trans.write(DOM0_DOMAIN_ID, path.clone(), new_value.clone())
                 .unwrap();
             // And verify the read
-            let read = trans.read(&path)
+            let read = trans.read(DOM0_DOMAIN_ID, &path)
                 .unwrap();
             assert_eq!(read, new_value);
 
@@ -573,7 +584,7 @@ mod test {
                 let mutex = txns.get(ROOT_TRANSACTION).unwrap();
                 let guard = mutex.lock().unwrap();
                 let global = guard.borrow_mut();
-                let read = global.read(&path)
+                let read = global.read(DOM0_DOMAIN_ID, &path)
                     .unwrap();
                 assert_eq!(read, value);
             }
@@ -586,7 +597,7 @@ mod test {
                 let mutex = txns.get(ROOT_TRANSACTION).unwrap();
                 let guard = mutex.lock().unwrap();
                 let global = guard.borrow_mut();
-                let read = global.read(&path)
+                let read = global.read(DOM0_DOMAIN_ID, &path)
                     .unwrap();
                 assert_eq!(read, value);
             }
@@ -607,7 +618,7 @@ mod test {
             let guard = mutex.lock().unwrap();
             let mut global = guard.borrow_mut();
 
-            global.write(path.clone(), value.clone())
+            global.write(DOM0_DOMAIN_ID, path.clone(), value.clone())
                 .unwrap();
         }
 
@@ -618,16 +629,16 @@ mod test {
             let guard = mutex.lock().unwrap();
             let mut trans = guard.borrow_mut();
             // And verify its state
-            let read = trans.read(&path)
+            let read = trans.read(DOM0_DOMAIN_ID, &path)
                 .unwrap();
             assert_eq!(read, value);
 
             // Write a new value for our path
             let new_value = Value::from("value2");
-            trans.write(path.clone(), new_value.clone())
+            trans.write(DOM0_DOMAIN_ID, path.clone(), new_value.clone())
                 .unwrap();
             // And verify the read
-            let read = trans.read(&path)
+            let read = trans.read(DOM0_DOMAIN_ID, &path)
                 .unwrap();
             assert_eq!(read, new_value);
 
@@ -637,7 +648,7 @@ mod test {
                 let guard = mutex.lock().unwrap();
                 let mut global = guard.borrow_mut();
 
-                global.write(path.clone(), global_value.clone())
+                global.write(DOM0_DOMAIN_ID, path.clone(), global_value.clone())
                     .unwrap();
             }
 
@@ -651,7 +662,7 @@ mod test {
                 let guard = mutex.lock().unwrap();
                 let global = guard.borrow_mut();
 
-                let read = global.read(&path)
+                let read = global.read(DOM0_DOMAIN_ID, &path)
                     .unwrap();
                 assert_eq!(read, global_value);
             }
@@ -671,7 +682,7 @@ mod test {
             let guard = mutex.lock().unwrap();
             let mut global = guard.borrow_mut();
 
-            global.write(path.clone(), value.clone())
+            global.write(DOM0_DOMAIN_ID, path.clone(), value.clone())
                 .unwrap();
         }
 
@@ -682,16 +693,16 @@ mod test {
             let guard = mutex.lock().unwrap();
             let mut trans = guard.borrow_mut();
             // And verify its state
-            let read = trans.read(&path)
+            let read = trans.read(DOM0_DOMAIN_ID, &path)
                 .unwrap();
             assert_eq!(read, value);
 
             // Write a new value for our path
             let new_value = Value::from("value2");
-            trans.write(path.clone(), new_value.clone())
+            trans.write(DOM0_DOMAIN_ID, path.clone(), new_value.clone())
                 .unwrap();
             // And verify the read
-            let read = trans.read(&path)
+            let read = trans.read(DOM0_DOMAIN_ID, &path)
                 .unwrap();
             assert_eq!(read, new_value);
 
@@ -701,7 +712,7 @@ mod test {
                 let guard = mutex.lock().unwrap();
                 let mut global = guard.borrow_mut();
 
-                global.rm(&path)
+                global.rm(DOM0_DOMAIN_ID, &path)
                     .unwrap();
             }
 
@@ -724,16 +735,16 @@ mod test {
         let parent = path.parent()
             .unwrap();
 
-        global.mkdir(path.clone())
+        global.mkdir(DOM0_DOMAIN_ID, path.clone())
             .unwrap();
 
         // verify the parent directory was created
-        let read = global.read(&parent)
+        let read = global.read(DOM0_DOMAIN_ID, &parent)
             .unwrap();
         assert_eq!(read, "");
 
         // verify the path was created
-        let read = global.read(&path)
+        let read = global.read(DOM0_DOMAIN_ID, &path)
             .unwrap();
         assert_eq!(read, "");
     }
@@ -749,11 +760,11 @@ mod test {
 
         let path = Path::from(DOM0_DOMAIN_ID, "/basic/path");
 
-        global.mkdir(path.clone())
+        global.mkdir(DOM0_DOMAIN_ID, path.clone())
             .unwrap();
 
         // verify the parent directory was created
-        let read = global.read(&Path::from(DOM0_DOMAIN_ID, "/"))
+        let read = global.read(DOM0_DOMAIN_ID, &Path::from(DOM0_DOMAIN_ID, "/"))
             .unwrap();
         assert_eq!(read, "");
     }
@@ -772,18 +783,18 @@ mod test {
         let basic = path1.parent()
             .unwrap();
 
-        global.mkdir(path1.clone())
+        global.mkdir(DOM0_DOMAIN_ID, path1.clone())
             .unwrap();
-        global.mkdir(path2.clone())
+        global.mkdir(DOM0_DOMAIN_ID, path2.clone())
             .unwrap();
 
         // verify the parent directory was created
-        let read = global.read(&basic)
+        let read = global.read(DOM0_DOMAIN_ID, &basic)
             .unwrap();
         assert_eq!(read, "");
 
         // grab a list of all subdirectories
-        let subs = global.subdirs(&basic)
+        let subs = global.subdirs(DOM0_DOMAIN_ID, &basic)
             .unwrap();
         assert_eq!(subs, vec![Basename::from("path1"), Basename::from("path2")]);
     }
@@ -800,37 +811,37 @@ mod test {
         let path2 = Path::from(DOM0_DOMAIN_ID, "/basic/path2");
         let basic = path1.parent()
             .unwrap();
-        global.mkdir(path1.clone())
+        global.mkdir(DOM0_DOMAIN_ID, path1.clone())
             .unwrap();
-        global.mkdir(path2.clone())
+        global.mkdir(DOM0_DOMAIN_ID, path2.clone())
             .unwrap();
 
-        global.rm(&basic)
+        global.rm(DOM0_DOMAIN_ID, &basic)
             .unwrap();
 
         // verify the parent directory was removed
-        match global.read(&basic) {
+        match global.read(DOM0_DOMAIN_ID, &basic) {
             Err(Error::ENOENT(_)) => assert!(true),
             Err(ref e) => assert!(false, format!("unexpected error returned {:?}", e)),
             Ok(_) => assert!(false, format!("failed to remove {:?}", basic)),
         }
 
         // verify the path1 directory was removed
-        match global.read(&path1) {
+        match global.read(DOM0_DOMAIN_ID, &path1) {
             Err(Error::ENOENT(_)) => assert!(true),
             Err(ref e) => assert!(false, format!("unexpected error returned {:?}", e)),
             Ok(_) => assert!(false, format!("failed to remove {:?}", basic)),
         }
 
         // verify the path2 directory was removed
-        match global.read(&path2) {
+        match global.read(DOM0_DOMAIN_ID, &path2) {
             Err(Error::ENOENT(_)) => assert!(true),
             Err(ref e) => assert!(false, format!("unexpected error returned {:?}", e)),
             Ok(_) => assert!(false, format!("failed to remove {:?}", basic)),
         }
 
         // verify the root still exists
-        let read = global.read(&Path::from(DOM0_DOMAIN_ID, "/"))
+        let read = global.read(DOM0_DOMAIN_ID, &Path::from(DOM0_DOMAIN_ID, "/"))
             .unwrap();
         assert_eq!(read, "");
     }
