@@ -20,7 +20,7 @@ use error::{Error, Result};
 use rand::Rng;
 use std::boxed::Box;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{LinkedList, HashMap, HashSet};
 use std::num::Wrapping;
 use std::sync::{Mutex, Arc};
 use super::wire;
@@ -52,6 +52,7 @@ pub struct Permission {
 
 #[derive(Clone, Debug)]
 struct Node {
+    pub path: Path,
     pub value: Value,
     pub children: HashSet<Basename>,
     pub permissions: Vec<Permission>,
@@ -102,8 +103,9 @@ fn manual_entry(store: &mut Store, name: Path, child_list: Vec<Basename>) {
         children.insert(child);
     }
 
-    store.insert(name,
+    store.insert(name.clone(),
                  Node {
+                     path: name,
                      value: Value::from(""),
                      children: children,
                      permissions: vec![Permission {
@@ -248,6 +250,94 @@ impl Transaction {
         Ok(())
     }
 
+    /// Get a reference to a node
+    #[doc(hidden)]
+    fn get_node<'a>(self: &'a Transaction,
+                    dom_id: wire::DomainId,
+                    path: &Path,
+                    perm: Perm)
+                    -> Result<&'a Node> {
+        self.store
+            .get(path)
+            .ok_or(Error::ENOENT(format!("failed to find {:?}", path)))
+    }
+
+    /// Write a node into the data store
+    #[doc(hidden)]
+    fn write_node(self: &mut Transaction, dom_id: wire::DomainId, node: Node) -> Result<()> {
+        self.store.insert(node.path.clone(), node);
+        self.current_gen += Wrapping(1);
+        Ok(())
+    }
+
+    /// Construct a new node
+    #[doc(hidden)]
+    fn construct_node(self: &Transaction,
+                      dom_id: wire::DomainId,
+                      path: Path,
+                      value: Value)
+                      -> Result<LinkedList<Node>> {
+        // Get a list of all of the parent nodes that need to be modified/created
+        let parent_path = path.parent().unwrap();
+        let mut parent_list = match self.get_node(dom_id, &parent_path, PERM_WRITE) {
+            Ok(parent) => {
+                let mut lst = LinkedList::new();
+                lst.push_back(parent.clone());
+                lst
+            }
+            Err(Error::ENOENT(_)) => {
+                let lst = try!(self.construct_node(dom_id, parent_path, Value::from("")));
+                lst
+            }
+            Err(err) => return Err(err),
+        };
+
+        let node = {
+            // Grab the immediate parent, since we need to insert this as a child
+            let mut parent = parent_list.front_mut().unwrap();
+            if let Some(basename) = path.basename() {
+                parent.children.insert(basename);
+            }
+
+            // Clone the immediate parent node's permissions
+            let mut permissions = parent.permissions.clone();
+            if dom_id != DOM0_DOMAIN_ID {
+                // except for the unprivileged domains, which own what
+                // it creates
+                permissions[0].id = dom_id;
+            }
+
+            // Create the node
+            Node {
+                path: path.clone(),
+                value: value,
+                children: HashSet::new(),
+                permissions: permissions,
+            }
+        };
+
+        // And return that as a list
+        let mut list = LinkedList::new();
+        list.push_front(node);
+        list.append(&mut parent_list);
+        Ok(list)
+    }
+
+    /// Create a new node
+    #[doc(hidden)]
+    fn create_node(self: &mut Transaction,
+                   dom_id: wire::DomainId,
+                   path: Path,
+                   value: Value)
+                   -> Result<()> {
+        let nodes = try!(self.construct_node(dom_id, path, value));
+
+        for node in nodes.iter() {
+            try!(self.write_node(dom_id, node.clone()));
+        }
+        Ok(())
+    }
+
     /// Check whether this is the root transaction.
     #[doc(hidden)]
     fn is_root_transaction(self: &Transaction) -> bool {
@@ -260,42 +350,17 @@ impl Transaction {
                  path: Path,
                  value: Value)
                  -> Result<()> {
-        let node = Node {
-            value: value,
-            children: HashSet::new(),
-            permissions: vec![],
+
+        let node = {
+            self.get_node(dom_id, &path, PERM_WRITE).map(|n| n.clone())
         };
 
-        let _ = self.store.insert(path.clone(), node);
-        self.current_gen += Wrapping(1);
-
-        // Ensure that the parent paths exist when creating a new path
-        match path.parent() {
-            Some(parent) => {
-                match self.read(dom_id, &parent) {
-                    // If the parent path did not exist, write the empty string for its value
-                    Err(Error::ENOENT(_)) => {
-                        try!(self.write(dom_id, parent.clone(), Value::from("")))
-                    }
-                    Err(e) => return Err(e),
-                    Ok(_) => (),
-                }
-
-                // Once the parent exists, ensure the current node is a child of that parent
-                match path.basename() {
-                    Some(basename) => {
-                        try!(self.store
-                            .get_mut(&parent)
-                            .ok_or(Error::ENOENT(format!("failed to find {:?}", path)))
-                            .map(|node| node.children.insert(basename)));
-                    }
-                    None => (),
-                }
-            }
-            None => (),
+        if let Ok(mut node) = node {
+            node.value = value;
+            self.write_node(dom_id, node)
+        } else {
+            self.create_node(dom_id, path, value)
         }
-
-        Ok(())
     }
 
     /// Read a `Value` from `Path` inside of the current transaction.
@@ -304,15 +369,17 @@ impl Transaction {
     ///
     /// * `Error::ENOENT` when the path does not exist in the transaction.
     pub fn read(self: &Transaction, dom_id: wire::DomainId, path: &Path) -> Result<Value> {
-        self.store
-            .get(path)
-            .ok_or(Error::ENOENT(format!("failed to find {:?}", path)))
+        self.get_node(dom_id, path, PERM_READ)
             .map(|node| node.value.clone())
     }
 
     /// Make a new directory `Path` inside of the current transaction.
     pub fn mkdir(self: &mut Transaction, dom_id: wire::DomainId, path: Path) -> Result<()> {
-        self.write(dom_id, path, Value::from(""))
+        match self.get_node(dom_id, &path, PERM_WRITE) {
+            Err(Error::ENOENT(_)) => self.create_node(dom_id, path, Value::from("")),
+            Ok(_) => Ok(()),
+            Err(e) => Err(e),
+        }
     }
 
     /// Get a list of directories at `Path` inside the current transaction.
@@ -324,9 +391,7 @@ impl Transaction {
                    dom_id: wire::DomainId,
                    path: &Path)
                    -> Result<Vec<Basename>> {
-        self.store
-            .get(path)
-            .ok_or(Error::ENOENT(format!("failed to find {:?}", path)))
+        self.get_node(dom_id, path, PERM_READ)
             .map(|node| {
                 let mut subdirs = node.children
                     .iter()
@@ -343,9 +408,8 @@ impl Transaction {
     ///
     /// * `Error::ENOENT` when the path does not exist in the transaction.
     pub fn rm(self: &mut Transaction, dom_id: wire::DomainId, path: &Path) -> Result<()> {
-        let children = try!(self.store
-            .get(path)
-            .ok_or(Error::ENOENT(format!("failed to find {:?}", path)))
+        // FIXME: need to remove from the parent first
+        let children = try!(self.get_node(dom_id, path, PERM_WRITE)
             .map(|node| {
                 node.children
                     .iter()
@@ -360,6 +424,18 @@ impl Transaction {
         let _ = self.store.remove(path);
         self.current_gen += Wrapping(1);
         Ok(())
+    }
+
+    /// Get the permissions for a node.
+    ///
+    /// # Errors
+    ///
+    /// * `Error::ENOENT` when the path does not exist in the transaction.
+    pub fn get_perms(self: &Transaction,
+                     dom_id: wire::DomainId,
+                     path: &Path)
+                     -> Result<Vec<Permission>> {
+        Ok(vec![])
     }
 }
 
