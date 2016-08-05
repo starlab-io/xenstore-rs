@@ -26,13 +26,13 @@ use std::sync::{Mutex, Arc};
 use super::wire;
 use super::path::Path;
 
-#[derive(Clone, Debug)]
-pub enum Perm {
-    Read,
-    Write,
-    Both,
-    None,
-    Owner,
+bitflags! {
+    pub flags Perm: u32 {
+        const PERM_NONE  = 0x00000000,
+        const PERM_READ  = 0x00000001,
+        const PERM_WRITE = 0x00000002,
+        const PERM_OWNER = 0x00000004,
+    }
 }
 
 /// The Root Transaction Id.
@@ -98,7 +98,7 @@ fn manual_entry(store: &mut Store, name: Path, child_list: Vec<Basename>) {
     }
 
     let mut permissions = HashMap::new();
-    permissions.insert(DOM0_DOMAIN_ID, Perm::None);
+    permissions.insert(DOM0_DOMAIN_ID, PERM_NONE);
 
     store.insert(name,
                  Node {
