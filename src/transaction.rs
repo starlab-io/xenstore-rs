@@ -43,13 +43,18 @@ pub const DOM0_DOMAIN_ID: wire::DomainId = 0;
 
 pub type Basename = String;
 pub type Value = String;
-pub type Permissions = HashMap<wire::DomainId, Perm>;
+
+#[derive(Clone, Debug)]
+pub struct Permission {
+    pub id: wire::DomainId,
+    pub perm: Perm,
+}
 
 #[derive(Clone, Debug)]
 struct Node {
     pub value: Value,
     pub children: HashSet<Basename>,
-    pub permissions: Permissions,
+    pub permissions: Vec<Permission>,
 }
 
 type Store = HashMap<Path, Node>;
@@ -97,14 +102,14 @@ fn manual_entry(store: &mut Store, name: Path, child_list: Vec<Basename>) {
         children.insert(child);
     }
 
-    let mut permissions = HashMap::new();
-    permissions.insert(DOM0_DOMAIN_ID, PERM_NONE);
-
     store.insert(name,
                  Node {
                      value: Value::from(""),
                      children: children,
-                     permissions: permissions,
+                     permissions: vec![Permission {
+                                           id: DOM0_DOMAIN_ID,
+                                           perm: PERM_NONE,
+                                       }],
                  });
 }
 
@@ -258,7 +263,7 @@ impl Transaction {
         let node = Node {
             value: value,
             children: HashSet::new(),
-            permissions: Permissions::new(),
+            permissions: vec![],
         };
 
         let _ = self.store.insert(path.clone(), node);
