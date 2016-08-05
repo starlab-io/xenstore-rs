@@ -21,6 +21,7 @@ use rand::Rng;
 use std::boxed::Box;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::num::Wrapping;
 use std::sync::{Mutex, Arc};
 use super::wire;
 use super::path::Path;
@@ -59,8 +60,8 @@ type Store = HashMap<Path, Node>;
 #[derive(Debug)]
 pub struct Transaction {
     tx_id: wire::TxId,
-    current_gen: usize,
-    parent_gen: usize,
+    current_gen: Wrapping<u64>,
+    parent_gen: Wrapping<u64>,
     store: Store,
 }
 
@@ -94,8 +95,8 @@ impl<R: Rng + ?Sized> TransactionList<R> {
     pub fn new(rng: Box<R>) -> TransactionList<R> {
         let root = Transaction {
             tx_id: ROOT_TRANSACTION,
-            current_gen: 0,
-            parent_gen: 0,
+            current_gen: Wrapping(0),
+            parent_gen: Wrapping(0),
             store: Store::new(),
         };
 
@@ -209,7 +210,7 @@ impl Transaction {
         }
 
         self.store = child.store.clone();
-        self.current_gen += 1;
+        self.current_gen += Wrapping(1);
         Ok(())
     }
 
@@ -228,7 +229,7 @@ impl Transaction {
         };
 
         let _ = self.store.insert(path.clone(), node);
-        self.current_gen += 1;
+        self.current_gen += Wrapping(1);
 
         // Ensure that the parent paths exist when creating a new path
         match path.parent() {
