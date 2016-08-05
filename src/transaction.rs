@@ -315,6 +315,7 @@ impl Transaction {
         }
 
         let _ = self.store.remove(path);
+        self.current_gen += Wrapping(1);
         Ok(())
     }
 }
@@ -654,6 +655,59 @@ mod test {
                     .unwrap();
                 assert_eq!(read, global_value);
             }
+        }
+    }
+
+    #[test]
+    fn check_transaction_with_external_removes() {
+        let mut txns = TransactionList::new(Box::new(thread_rng()));
+
+        let path = Path::from(DOM0_DOMAIN_ID, "/basic/path");
+        let value = Value::from("value");
+
+        // Create the global state
+        {
+            let mutex = txns.get(ROOT_TRANSACTION).unwrap();
+            let guard = mutex.lock().unwrap();
+            let mut global = guard.borrow_mut();
+
+            global.write(path.clone(), value.clone())
+                .unwrap();
+        }
+
+        // Clone a new transaction
+        let tx_id = txns.start();
+        {
+            let mutex = txns.get(tx_id).unwrap();
+            let guard = mutex.lock().unwrap();
+            let mut trans = guard.borrow_mut();
+            // And verify its state
+            let read = trans.read(&path)
+                .unwrap();
+            assert_eq!(read, value);
+
+            // Write a new value for our path
+            let new_value = Value::from("value2");
+            trans.write(path.clone(), new_value.clone())
+                .unwrap();
+            // And verify the read
+            let read = trans.read(&path)
+                .unwrap();
+            assert_eq!(read, new_value);
+
+            // Write a new value for the global state
+            {
+                let mutex = txns.get(ROOT_TRANSACTION).unwrap();
+                let guard = mutex.lock().unwrap();
+                let mut global = guard.borrow_mut();
+
+                global.rm(&path)
+                    .unwrap();
+            }
+
+            // Close out the transaction
+            let ok = txns.end(&trans, TransactionStatus::Success);
+            assert_eq!(ok.is_err(), true);
         }
     }
 
