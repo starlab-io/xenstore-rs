@@ -90,14 +90,43 @@ pub enum TransactionStatus {
     Failure,
 }
 
+/// Insert manual entries into a Store
+fn manual_entry(store: &mut Store, name: Path, child_list: Vec<Basename>) {
+    let mut children = HashSet::new();
+    for child in child_list {
+        children.insert(child);
+    }
+
+    let mut permissions = HashMap::new();
+    permissions.insert(DOM0_DOMAIN_ID, Perm::None);
+
+    store.insert(name,
+                 Node {
+                     value: Value::from(""),
+                     children: children,
+                     permissions: permissions,
+                 });
+}
+
 impl<R: Rng + ?Sized> TransactionList<R> {
     /// Create a new instance of the `TransactionList`.
     pub fn new(rng: Box<R>) -> TransactionList<R> {
+        let mut store = Store::new();
+        manual_entry(&mut store,
+                     Path::from(DOM0_DOMAIN_ID, "/"),
+                     vec![Basename::from("tool")]);
+        manual_entry(&mut store,
+                     Path::from(DOM0_DOMAIN_ID, "/tool"),
+                     vec![Basename::from("xenstored")]);
+        manual_entry(&mut store,
+                     Path::from(DOM0_DOMAIN_ID, "/tool/xenstored"),
+                     vec![]);
+
         let root = Transaction {
             tx_id: ROOT_TRANSACTION,
             current_gen: Wrapping(0),
             parent_gen: Wrapping(0),
-            store: Store::new(),
+            store: store,
         };
 
         let mut txns = HashMap::new();
