@@ -44,7 +44,7 @@ pub const DOM0_DOMAIN_ID: wire::DomainId = 0;
 pub type Basename = String;
 pub type Value = String;
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct Permission {
     pub id: wire::DomainId,
     pub perm: Perm,
@@ -56,6 +56,24 @@ struct Node {
     pub value: Value,
     pub children: HashSet<Basename>,
     pub permissions: Vec<Permission>,
+}
+
+impl Node {
+    pub fn perms_ok(&self, dom_id: wire::DomainId, perm: Perm) -> bool {
+        let mask = PERM_READ | PERM_WRITE | PERM_OWNER;
+
+        if dom_id == DOM0_DOMAIN_ID || self.permissions[0].id == dom_id {
+            return (mask & perm) == perm;
+        }
+
+        for p in self.permissions.iter() {
+            if p.id == dom_id {
+                return (p.perm & perm) == perm;
+            }
+        }
+
+        return self.permissions[0].perm & perm == perm;
+    }
 }
 
 type Store = HashMap<Path, Node>;
@@ -260,6 +278,13 @@ impl Transaction {
         self.store
             .get(path)
             .ok_or(Error::ENOENT(format!("failed to find {:?}", path)))
+            .and_then(|node| {
+                if !node.perms_ok(dom_id, perm) {
+                    Err(Error::EACCES(format!("failed to verify permissions for {:?}", node.path)))
+                } else {
+                    Ok(node)
+                }
+            })
     }
 
     /// Write a node into the data store
@@ -435,7 +460,28 @@ impl Transaction {
                      dom_id: wire::DomainId,
                      path: &Path)
                      -> Result<Vec<Permission>> {
-        Ok(vec![])
+        self.get_node(dom_id, path, PERM_READ)
+            .map(|node| node.permissions.clone())
+    }
+
+    /// Set the permissions for a node.
+    ///
+    /// # Errors
+    ///
+    /// * `Error::ENOENT` when the path does not exist in the transaction.
+    pub fn set_perms(self: &mut Transaction,
+                     dom_id: wire::DomainId,
+                     path: &Path,
+                     permissions: Vec<Permission>)
+                     -> Result<()> {
+        let node = {
+            try!(self.get_node(dom_id, path, PERM_WRITE)
+                .map(|node| node.clone()))
+        };
+
+        let new_node = Node { permissions: permissions, ..node };
+
+        self.write_node(dom_id, new_node)
     }
 }
 
@@ -954,5 +1000,315 @@ mod test {
         let read = global.read(DOM0_DOMAIN_ID, &Path::from(DOM0_DOMAIN_ID, "/"))
             .unwrap();
         assert_eq!(read, "");
+    }
+
+    #[test]
+    fn get_root_permissions() {
+        let txns = TransactionList::new(Box::new(thread_rng()));
+
+        let mutex = txns.get(ROOT_TRANSACTION).unwrap();
+        let guard = mutex.lock().unwrap();
+        let trans = guard.borrow_mut();
+
+        let permissions = trans.get_perms(DOM0_DOMAIN_ID, &Path::from(DOM0_DOMAIN_ID, "/"))
+            .unwrap();
+
+        assert_eq!(permissions,
+                   vec![Permission {
+                            id: DOM0_DOMAIN_ID,
+                            perm: PERM_NONE,
+                        }]);
+    }
+
+    #[test]
+    fn get_local_permissions() {
+        let txns = TransactionList::new(Box::new(thread_rng()));
+
+        let mutex = txns.get(ROOT_TRANSACTION).unwrap();
+        let guard = mutex.lock().unwrap();
+        let mut trans = guard.borrow_mut();
+
+        trans.mkdir(DOM0_DOMAIN_ID,
+                   Path::from(DOM0_DOMAIN_ID, "/local/domain/1"))
+            .unwrap();
+
+        trans.set_perms(DOM0_DOMAIN_ID,
+                       &Path::from(DOM0_DOMAIN_ID, "/local/domain/1"),
+                       vec![Permission {
+                                id: 1,
+                                perm: PERM_NONE,
+                            }])
+            .unwrap();
+
+        let path = Path::from(1, "foo");
+        let value = Value::from("value");
+        trans.write(1, path.clone(), value.clone())
+            .unwrap();
+    }
+
+    #[test]
+    fn permissions_idempotent() {
+        let txns = TransactionList::new(Box::new(thread_rng()));
+
+        let mutex = txns.get(ROOT_TRANSACTION).unwrap();
+        let guard = mutex.lock().unwrap();
+        let mut trans = guard.borrow_mut();
+
+        let path = Path::from(DOM0_DOMAIN_ID, "/local/domain/1");
+
+        trans.mkdir(DOM0_DOMAIN_ID, path.clone())
+            .unwrap();
+
+        let perms = vec![
+            Permission {
+                id: 1,
+                perm: PERM_NONE,
+            },
+            Permission {
+                id: 2,
+                perm: PERM_READ,
+            },
+        ];
+
+        trans.set_perms(DOM0_DOMAIN_ID, &path, perms.clone())
+            .unwrap();
+
+        let read = trans.get_perms(DOM0_DOMAIN_ID, &path)
+            .unwrap();
+
+        assert_eq!(perms, read);
+    }
+
+    #[test]
+    fn permissions_inherit() {
+        let txns = TransactionList::new(Box::new(thread_rng()));
+
+        let mutex = txns.get(ROOT_TRANSACTION).unwrap();
+        let guard = mutex.lock().unwrap();
+        let mut trans = guard.borrow_mut();
+
+        let path = Path::from(DOM0_DOMAIN_ID, "/local/domain/1");
+
+        trans.mkdir(DOM0_DOMAIN_ID, path.clone())
+            .unwrap();
+
+        let perms = vec![
+            Permission {
+                id: 1,
+                perm: PERM_NONE,
+            },
+            Permission {
+                id: 2,
+                perm: PERM_READ,
+            },
+        ];
+
+        trans.set_perms(DOM0_DOMAIN_ID, &path, perms.clone())
+            .unwrap();
+
+        let path = path.push("foo");
+        trans.write(1, path.clone(), Value::from("bar"))
+            .unwrap();
+
+        let read = trans.get_perms(1, &path)
+            .unwrap();
+
+        assert_eq!(perms, read);
+    }
+
+    #[test]
+    fn permissions_inherit_no_overwrite_owner() {
+        let txns = TransactionList::new(Box::new(thread_rng()));
+
+        let mutex = txns.get(ROOT_TRANSACTION).unwrap();
+        let guard = mutex.lock().unwrap();
+        let mut trans = guard.borrow_mut();
+
+        let path = Path::from(DOM0_DOMAIN_ID, "/local/domain/1");
+
+        trans.mkdir(DOM0_DOMAIN_ID, path.clone())
+            .unwrap();
+
+        let perms = vec![
+            Permission {
+                id: 1,
+                perm: PERM_NONE,
+            },
+            Permission {
+                id: 2,
+                perm: PERM_READ,
+            },
+        ];
+
+        trans.set_perms(DOM0_DOMAIN_ID, &path, perms.clone())
+            .unwrap();
+
+        let path = path.push("foo");
+        trans.write(DOM0_DOMAIN_ID, path.clone(), Value::from("bar"))
+            .unwrap();
+
+        let read = trans.get_perms(1, &path)
+            .unwrap();
+
+        assert_eq!(perms, read);
+    }
+
+    #[test]
+    fn block_cross_domain_reads() {
+        let txns = TransactionList::new(Box::new(thread_rng()));
+
+        let mutex = txns.get(ROOT_TRANSACTION).unwrap();
+        let guard = mutex.lock().unwrap();
+        let mut trans = guard.borrow_mut();
+
+        trans.mkdir(DOM0_DOMAIN_ID,
+                   Path::from(DOM0_DOMAIN_ID, "/local/domain/1"))
+            .unwrap();
+
+        trans.set_perms(DOM0_DOMAIN_ID,
+                       &Path::from(DOM0_DOMAIN_ID, "/local/domain/1"),
+                       vec![Permission {
+                                id: 1,
+                                perm: PERM_NONE,
+                            }])
+            .unwrap();
+
+        let path = Path::from(1, "foo");
+        let value = Value::from("value");
+        trans.write(1, path.clone(), value.clone())
+            .unwrap();
+
+        // Check the domain 2 is blocked
+        let v = trans.read(2, &path);
+        match v {
+            Ok(_) => assert!(false, "allowed cross-domain read"),
+            Err(Error::EACCES(..)) => assert!(true, "blocked cross-domain read"),
+            Err(_) => assert!(false, "unknown error"),
+        }
+
+        // Check the Dom0 is still allowed
+        let read = trans.read(DOM0_DOMAIN_ID, &path).unwrap();
+        assert_eq!(read, value);
+    }
+
+    #[test]
+    fn block_cross_domain_writes() {
+        let txns = TransactionList::new(Box::new(thread_rng()));
+
+        let mutex = txns.get(ROOT_TRANSACTION).unwrap();
+        let guard = mutex.lock().unwrap();
+        let mut trans = guard.borrow_mut();
+
+        trans.mkdir(DOM0_DOMAIN_ID,
+                   Path::from(DOM0_DOMAIN_ID, "/local/domain/1"))
+            .unwrap();
+
+        trans.set_perms(DOM0_DOMAIN_ID,
+                       &Path::from(DOM0_DOMAIN_ID, "/local/domain/1"),
+                       vec![Permission {
+                                id: 1,
+                                perm: PERM_NONE,
+                            }])
+            .unwrap();
+
+        let path = Path::from(1, "foo");
+        let value = Value::from("value");
+        trans.write(1, path.clone(), value.clone())
+            .unwrap();
+
+        // Check the domain 2 is blocked
+        let v = trans.write(2, path.clone(), Value::from("new value"));
+        match v {
+            Ok(_) => assert!(false, "allowed cross-domain write"),
+            Err(Error::EACCES(..)) => assert!(true, "blocked cross-domain write"),
+            Err(_) => assert!(false, "unknown error"),
+        }
+
+        let read = trans.read(1, &path).unwrap();
+        assert_eq!(read, value.clone());
+
+        // Check the Dom0 is still allowed
+        trans.write(DOM0_DOMAIN_ID, path.clone(), Value::from("new value")).unwrap();
+
+        let read = trans.read(1, &path).unwrap();
+        assert_eq!(read, Value::from("new value"));
+    }
+
+    #[test]
+    fn block_cross_domain_rm() {
+        let txns = TransactionList::new(Box::new(thread_rng()));
+
+        let mutex = txns.get(ROOT_TRANSACTION).unwrap();
+        let guard = mutex.lock().unwrap();
+        let mut trans = guard.borrow_mut();
+
+        trans.mkdir(DOM0_DOMAIN_ID,
+                   Path::from(DOM0_DOMAIN_ID, "/local/domain/1"))
+            .unwrap();
+
+        trans.set_perms(DOM0_DOMAIN_ID,
+                       &Path::from(DOM0_DOMAIN_ID, "/local/domain/1"),
+                       vec![Permission {
+                                id: 1,
+                                perm: PERM_NONE,
+                            }])
+            .unwrap();
+
+        let path = Path::from(1, "foo");
+        let value = Value::from("value");
+        trans.write(1, path.clone(), value.clone())
+            .unwrap();
+
+        // Check the domain 2 is blocked
+        let v = trans.rm(2, &path);
+        match v {
+            Ok(_) => assert!(false, "allowed cross-domain rm"),
+            Err(Error::EACCES(..)) => assert!(true, "blocked cross-domain rm"),
+            Err(_) => assert!(false, "unknown error"),
+        }
+
+        let read = trans.read(1, &path).unwrap();
+        assert_eq!(read, value.clone());
+
+        // Check the Dom0 is still allowed
+        trans.rm(DOM0_DOMAIN_ID, &path).unwrap();
+    }
+
+    #[test]
+    fn block_cross_domain_subdir() {
+        let txns = TransactionList::new(Box::new(thread_rng()));
+
+        let mutex = txns.get(ROOT_TRANSACTION).unwrap();
+        let guard = mutex.lock().unwrap();
+        let mut trans = guard.borrow_mut();
+
+        let domain = Path::from(DOM0_DOMAIN_ID, "/local/domain/1");
+
+        trans.mkdir(DOM0_DOMAIN_ID, domain.clone())
+            .unwrap();
+
+        trans.set_perms(DOM0_DOMAIN_ID,
+                       &domain,
+                       vec![Permission {
+                                id: 1,
+                                perm: PERM_NONE,
+                            }])
+            .unwrap();
+
+        let path = Path::from(1, "foo");
+        let value = Value::from("value");
+        trans.write(1, path.clone(), value.clone())
+            .unwrap();
+
+        // Check the domain 2 is blocked
+        let v = trans.subdirs(2, &domain);
+        match v {
+            Ok(_) => assert!(false, "allowed cross-domain subdir"),
+            Err(Error::EACCES(..)) => assert!(true, "blocked cross-domain subdir"),
+            Err(_) => assert!(false, "unknown error"),
+        }
+
+        // Check the Dom0 is still allowed
+        trans.subdirs(DOM0_DOMAIN_ID, &domain).unwrap();
     }
 }
