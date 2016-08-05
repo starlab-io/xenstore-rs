@@ -16,6 +16,7 @@
     with this program; if not, see <http://www.gnu.org/licenses/>.
 **/
 
+extern crate byteorder;
 #[macro_use]
 extern crate bitflags;
 
@@ -26,6 +27,9 @@ extern crate lazy_static;
 extern crate log;
 
 extern crate rand;
+
+#[macro_use]
+extern crate try_opt;
 
 pub mod error;
 pub mod path;

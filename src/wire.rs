@@ -16,6 +16,15 @@
     with this program; if not, see <http://www.gnu.org/licenses/>.
 **/
 
+#[cfg(test)]
+extern crate quickcheck;
+
+use byteorder::{ReadBytesExt, NativeEndian, WriteBytesExt};
+use std::io;
+
+#[cfg(test)]
+use self::quickcheck::{Arbitrary, Gen};
+
 /// XenStore message types
 pub const XS_DEBUG: u32 = 0;
 pub const XS_DIRECTORY: u32 = 1;
@@ -78,9 +87,108 @@ pub type DomainId = u32;
 pub const HEADER_SIZE: usize = 16;
 
 /// The `Header` type that is generic to all messages
+#[derive(Clone, Debug, PartialEq)]
 pub struct Header {
     pub msg_type: u32,
     pub req_id: ReqId,
     pub tx_id: TxId,
     pub len: u32,
+}
+
+impl Header {
+    /// Parse the header
+    pub fn parse(bytes: &[u8]) -> Option<Header> {
+        let mut input = io::Cursor::new(bytes);
+        let msg_type = try_opt!(input.read_u32::<NativeEndian>().ok());
+        let req_id = try_opt!(input.read_u32::<NativeEndian>().ok());
+        let tx_id = try_opt!(input.read_u32::<NativeEndian>().ok());
+        let len = try_opt!(input.read_u32::<NativeEndian>().ok());
+
+        Some(Header {
+            msg_type: msg_type,
+            req_id: req_id,
+            tx_id: tx_id,
+            len: len,
+        })
+    }
+
+    /// Output the header as a vector of bytes
+    pub fn to_vec(&self) -> Vec<u8> {
+        let mut ret = io::Cursor::new(vec![0u8; HEADER_SIZE]);
+        ret.write_u32::<NativeEndian>(self.msg_type).unwrap();
+        ret.write_u32::<NativeEndian>(self.req_id).unwrap();
+        ret.write_u32::<NativeEndian>(self.tx_id).unwrap();
+        ret.write_u32::<NativeEndian>(self.len).unwrap();
+
+        ret.into_inner()
+    }
+
+    /// Provide the length that the body should be
+    pub fn len(&self) -> usize {
+        self.len as usize
+    }
+}
+
+#[cfg(test)]
+impl Arbitrary for Header {
+    fn arbitrary<G: Gen>(g: &mut G) -> Header {
+        Header {
+            msg_type: u32::arbitrary(g),
+            req_id: u32::arbitrary(g),
+            tx_id: u32::arbitrary(g),
+            len: u32::arbitrary(g),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::Header;
+    use super::quickcheck::quickcheck;
+
+    #[test]
+    fn header_parse_values() {
+        let hdr = vec![1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0];
+        let header = Header::parse(&hdr).unwrap();
+
+        assert_eq!(header.msg_type, 1);
+        assert_eq!(header.req_id, 2);
+        assert_eq!(header.tx_id, 3);
+        assert_eq!(header.len, 4);
+    }
+
+    #[test]
+    fn header_idempotent() {
+        fn prop(hdr: Header) -> bool {
+            let bytes = hdr.to_vec();
+            let decoded_hdr = Header::parse(&bytes).unwrap();
+
+            decoded_hdr == hdr
+        }
+
+        quickcheck(prop as fn(Header) -> bool);
+    }
+
+    #[test]
+    fn header_parse() {
+        fn prop(bytes: Vec<u8>) -> bool {
+            // if its less than 16 bytes then it should fail to parse
+            // otherwise it should be good
+            let expected = match bytes.len() {
+                0...15 => false,
+                _ => true,
+            };
+
+            // did it parse
+            let result = Header::parse(&bytes).is_some();
+
+            // logical biconditional people
+            // that's the negation of exclusive or
+            // which is true when both inputs are the same
+            !(expected ^ result)
+        }
+
+        quickcheck(prop as fn(Vec<u8>) -> bool);
+    }
 }
