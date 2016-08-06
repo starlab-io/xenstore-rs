@@ -266,10 +266,11 @@ impl Connection {
                     None
                 }
             }
-            State::AwaitingPayload(_, ref mut buf) => {
+            State::AwaitingPayload(ref h, ref mut buf) => {
                 let _ = try!(Self::read_payload(&mut self.sock, buf));
-                let resp = vec![1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-                Some(State::transition_write_msg(resp))
+                let resp = vec![];
+                let resp_hdr = wire::Header { len: 0, ..h.clone() };
+                Some(State::transition_write_msg(resp_hdr, resp))
             }
             _ => unreachable!(),
         };
@@ -308,23 +309,45 @@ impl Connection {
 
     /// Handle write events for the connection from the event loop
     fn write(&mut self) -> io::Result<()> {
-        match self.sock.try_write_buf(self.state.mut_write_buf()) {
-            // some (or all) of the data was written
-            Ok(Some(n)) => {
-                if self.state.write_buf().get_ref().capacity() == n {
-                    // all bytes written so transition back to wait for header
-                    self.state = State::transition_awaiting_header();
+        let new_state = match self.state {
+            State::Write(ref header, ref payload) => {
+                match try!(Self::write_msg(&mut self.sock, header, payload)) {
+                    Some(_) => Some(State::transition_awaiting_header()),
+                    None => None,
                 }
             }
-            // the socket wasn't actually ready try again
-            Ok(None) => {}
-            Err(e) => {
-                error!("CONN: {:?} failed to write: {:?}", self.token, e);
-                return Err(e);
-            }
+            _ => unreachable!(),
+        };
+
+        debug!("CONN: {:?} STATE CHANGE: {:?}", self.token, new_state);
+
+        // if the state was updated then save it
+        if let Some(new_state) = new_state {
+            self.state = new_state;
         }
 
         Ok(())
+    }
+
+    /// Write a response back to the client
+    fn write_msg<W: io::Write>(output: &mut W,
+                               header: &wire::Header,
+                               _: &io::Cursor<Vec<u8>>)
+                               -> io::Result<Option<()>> {
+        // convert header to a vector of bytes
+        let mut hdr = header.to_vec();
+
+        // write out the header
+        let res = try!(output.try_write(&mut hdr));
+
+        // check that everything was sent
+        if let Some(n) = res {
+            // if we sent everything then its a success
+            if n == hdr.len() {
+                return Ok(Some(()));
+            }
+        }
+        Ok(None)
     }
 
     /// Close this connection
@@ -349,26 +372,12 @@ enum State {
     // read the payload into the buffer
     AwaitingPayload(wire::Header, Vec<u8>),
     // write the message out
-    Write(io::Cursor<Vec<u8>>),
+    Write(wire::Header, io::Cursor<Vec<u8>>),
     // closed and time to clean up
     Closed,
 }
 
 impl State {
-    fn mut_write_buf(&mut self) -> &mut io::Cursor<Vec<u8>> {
-        match *self {
-            State::Write(ref mut buf) => buf,
-            _ => panic!("connection not in writing state"),
-        }
-    }
-
-    fn write_buf(&self) -> &io::Cursor<Vec<u8>> {
-        match *self {
-            State::Write(ref buf) => buf,
-            _ => panic!("connection not in writing state"),
-        }
-    }
-
     fn transition_awaiting_header() -> State {
         State::AwaitingHeader(Vec::<u8>::with_capacity(wire::HEADER_SIZE))
     }
@@ -378,7 +387,7 @@ impl State {
         State::AwaitingPayload(header, Vec::<u8>::with_capacity(len))
     }
 
-    fn transition_write_msg(msg: Vec<u8>) -> State {
-        State::Write(io::Cursor::new(msg))
+    fn transition_write_msg(header: wire::Header, msg: Vec<u8>) -> State {
+        State::Write(header, io::Cursor::new(msg))
     }
 }
