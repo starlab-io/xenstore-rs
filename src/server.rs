@@ -226,7 +226,6 @@ impl Connection {
     }
 
     /// Reregister the connection for events from the event loop
-    /// Register the connection for events from the event loop
     fn reregister(&mut self, event_loop: &mut mio::EventLoop<Server>) -> io::Result<()> {
 
         let event_set = match self.state {
