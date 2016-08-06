@@ -194,7 +194,10 @@ impl Connection {
 
         match result {
             // if we processed this and there was an error shut 'er down
-            Err(_) => self.close(),
+            Err(e) => {
+                error!("CONN: {:?} failed read|write: {:?}", self.token, e);
+                self.close();
+            }
             Ok(_) => {
                 if let Err(_) = self.reregister(event_loop) {
                     // if we couldn't reregister shut 'er down
