@@ -74,6 +74,9 @@ pub type ReqId = u32;
 pub type TxId = u32;
 pub type DomainId = u32;
 
+/// A `Header` is always 16 bytes long
+pub const HEADER_SIZE: usize = 16;
+
 /// The `Header` type that is generic to all messages
 pub struct Header {
     pub msg_type: u32,
