@@ -23,6 +23,7 @@ use self::mio::{TryRead, TryWrite};
 use self::mio::unix::{UnixListener, UnixStream};
 use self::mio::util::Slab;
 use std::io;
+use wire;
 
 const SERVER: mio::Token = mio::Token(0);
 
@@ -161,7 +162,7 @@ impl Connection {
         Connection {
             sock: sock,
             token: token,
-            state: State::AwaitingHeader(Vec::<u8>::with_capacity(16)),
+            state: State::transition_awaiting_header(),
         }
     }
 
@@ -254,40 +255,51 @@ impl Connection {
 
     /// Handle read events for the connection from the event loop
     fn read(&mut self) -> io::Result<()> {
-        // edge triggering requires us to drain the whole
-        match self.sock.try_read_buf(self.state.mut_read_buf()) {
-            Ok(Some(0)) => {
-                // Remote end closed the connection so close our side
-                self.close();
-            }
-            Ok(Some(n)) => {
-                debug!("Read {:?} bytes from {:?} connection", n, self.token);
-                debug!("packet: {:?}", self.state.read_buf());
-
-                match self.state {
-                    State::AwaitingHeader(..) => {
-                        // parse header here and get size of payload
-                        self.state.transition_awaiting_payload(2);
-                    }
-                    State::AwaitingPayload(len, _) => {
-                        // if we got all the bytes we needed
-                        if n == len {
-                            let resp = vec![1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-                            self.state.transition_write_msg(resp);
-                        }
-                    }
-                    _ => unreachable!(),
+        let new_state = match self.state {
+            State::AwaitingHeader(ref mut buf) => {
+                if let Some(header) = try!(Self::read_header(&mut self.sock, buf)) {
+                    Some(State::transition_awaiting_payload(header))
+                } else {
+                    None
                 }
             }
-            Ok(None) => {
-                // nothing to read
-                debug!("Read 0 bytes from {:?} connection", self.token);
+            State::AwaitingPayload(_, ref mut buf) => {
+                let _ = try!(Self::read_payload(&mut self.sock, buf));
+                let resp = vec![1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+                Some(State::transition_write_msg(resp))
             }
-            Err(e) => {
-                error!("Failed to read from {:?} connection: {:?}", self.token, e);
-                return Err(e);
-            }
+            _ => unreachable!(),
+        };
+
+        debug!("CONN: {:?} STATE CHANGE: {:?}", self.token, new_state);
+
+        // if the state was updated then save it
+        if let Some(new_state) = new_state {
+            self.state = new_state;
         }
+
+        Ok(())
+    }
+
+    /// Read the header from the socket
+    fn read_header<R: io::Read>(input: &mut R,
+                                buf: &mut Vec<u8>)
+                                -> io::Result<Option<wire::Header>> {
+        // read as much as we can
+        match try!(input.try_read_buf(buf)) {
+            Some(n) if n > 0 => {
+                debug!("recv: {:?} bytes", n);
+                // if we got some data try to parser the header
+                Ok(wire::Header::parse(&buf))
+            }
+            Some(_) => Err(io::Error::new(io::ErrorKind::UnexpectedEof, "0 bytes read")),
+            None => Ok(None),
+        }
+    }
+
+    /// Read the payload from the socket
+    fn read_payload<R: io::Read>(input: &mut R, buf: &mut Vec<u8>) -> io::Result<()> {
+        try!(input.try_read_buf(buf));
         Ok(())
     }
 
@@ -298,7 +310,7 @@ impl Connection {
             Ok(Some(n)) => {
                 if self.state.write_buf().get_ref().capacity() == n {
                     // all bytes written so transition back to wait for header
-                    self.state.transition_awaiting_header();
+                    self.state = State::transition_awaiting_header();
                 }
             }
             // the socket wasn't actually ready try again
@@ -332,7 +344,7 @@ enum State {
     // read the header into the buffer
     AwaitingHeader(Vec<u8>),
     // read the payload into the buffer
-    AwaitingPayload(usize, Vec<u8>),
+    AwaitingPayload(wire::Header, Vec<u8>),
     // write the message out
     Write(io::Cursor<Vec<u8>>),
     // closed and time to clean up
@@ -340,22 +352,6 @@ enum State {
 }
 
 impl State {
-    fn mut_read_buf(&mut self) -> &mut Vec<u8> {
-        match *self {
-            State::AwaitingHeader(ref mut buf) => buf,
-            State::AwaitingPayload(_, ref mut buf) => buf,
-            _ => panic!("connection not in waiting for header state"),
-        }
-    }
-
-    fn read_buf(&self) -> &[u8] {
-        match *self {
-            State::AwaitingHeader(ref buf) => buf,
-            State::AwaitingPayload(_, ref buf) => buf,
-            _ => panic!("connection not in waiting for header state"),
-        }
-    }
-
     fn mut_write_buf(&mut self) -> &mut io::Cursor<Vec<u8>> {
         match *self {
             State::Write(ref mut buf) => buf,
@@ -370,15 +366,16 @@ impl State {
         }
     }
 
-    fn transition_awaiting_header(&mut self) {
-        *self = State::AwaitingHeader(Vec::<u8>::with_capacity(16))
+    fn transition_awaiting_header() -> State {
+        State::AwaitingHeader(Vec::<u8>::with_capacity(wire::HEADER_SIZE))
     }
 
-    fn transition_awaiting_payload(&mut self, len: usize) {
-        *self = State::AwaitingPayload(len, Vec::<u8>::with_capacity(4096))
+    fn transition_awaiting_payload(header: wire::Header) -> State {
+        let len = header.len();
+        State::AwaitingPayload(header, Vec::<u8>::with_capacity(len))
     }
 
-    fn transition_write_msg(&mut self, msg: Vec<u8>) {
-        *self = State::Write(io::Cursor::new(msg));
+    fn transition_write_msg(msg: Vec<u8>) -> State {
+        State::Write(io::Cursor::new(msg))
     }
 }
