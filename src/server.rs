@@ -173,6 +173,18 @@ impl Connection {
                events,
                self.state);
 
+        if events.is_error() {
+            debug!("CONN: {:?} unexpected connection error", self.token);
+            self.close();
+            return;
+        }
+
+        if events.is_hup() {
+            debug!("CONN: {:?} connection was closed by remote", self.token);
+            self.close();
+            return;
+        }
+
         let result = match self.state {
             State::AwaitingHeader(..) |
             State::AwaitingPayload(..) => {
