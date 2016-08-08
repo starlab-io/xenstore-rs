@@ -289,7 +289,7 @@ impl Transaction {
 
     /// Write a node into the data store
     #[doc(hidden)]
-    fn write_node(self: &mut Transaction, dom_id: wire::DomainId, node: Node) -> Result<()> {
+    fn write_node(self: &mut Transaction, node: Node) -> Result<()> {
         self.store.insert(node.path.clone(), node);
         self.current_gen += Wrapping(1);
         Ok(())
@@ -358,7 +358,7 @@ impl Transaction {
         let nodes = try!(self.construct_node(dom_id, path, value));
 
         for node in nodes.iter() {
-            try!(self.write_node(dom_id, node.clone()));
+            try!(self.write_node(node.clone()));
         }
         Ok(())
     }
@@ -382,7 +382,7 @@ impl Transaction {
 
         if let Ok(mut node) = node {
             node.value = value;
-            self.write_node(dom_id, node)
+            self.write_node(node)
         } else {
             self.create_node(dom_id, path, value)
         }
@@ -447,7 +447,7 @@ impl Transaction {
                 children.remove(&basename);
                 Node { children: children, ..node.clone() }
             }));
-        try!(self.write_node(dom_id, parent_node));
+        try!(self.write_node(parent_node));
 
         // Grab a list of all of the children
         let children = try!(self.get_node(dom_id, path, PERM_WRITE)
@@ -501,7 +501,7 @@ impl Transaction {
 
         let new_node = Node { permissions: permissions, ..node };
 
-        self.write_node(dom_id, new_node)
+        self.write_node(new_node)
     }
 }
 
