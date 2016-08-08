@@ -433,7 +433,23 @@ impl Transaction {
     ///
     /// * `Error::ENOENT` when the path does not exist in the transaction.
     pub fn rm(self: &mut Transaction, dom_id: wire::DomainId, path: &Path) -> Result<()> {
-        // FIXME: need to remove from the parent first
+        if path == &Path::from(DOM0_DOMAIN_ID, "/") {
+            return Err(Error::EINVAL(format!("cannot remove root directory")));
+        }
+
+        let basename = path.basename().unwrap();
+        let parent = path.parent().unwrap();
+
+        // need to remove entry from the parent first
+        let parent_node = try!(self.get_node(dom_id, &parent, PERM_WRITE)
+            .map(|node| {
+                let mut children = node.children.clone();
+                children.remove(&basename);
+                Node { children: children, ..node.clone() }
+            }));
+        try!(self.write_node(dom_id, parent_node));
+
+        // Grab a list of all of the children
         let children = try!(self.get_node(dom_id, path, PERM_WRITE)
             .map(|node| {
                 node.children
@@ -441,12 +457,16 @@ impl Transaction {
                     .map(|s| s.to_owned())
                     .collect::<Vec<Basename>>()
             }));
+
+        // And recursively remove all of its children
         for child in children {
             let path = path.push(&child);
             try!(self.rm(dom_id, &path));
         }
 
+        // Then remove the child node
         let _ = self.store.remove(path);
+
         self.current_gen += Wrapping(1);
         Ok(())
     }
@@ -1000,6 +1020,64 @@ mod test {
         let read = global.read(DOM0_DOMAIN_ID, &Path::from(DOM0_DOMAIN_ID, "/"))
             .unwrap();
         assert_eq!(read, "");
+    }
+
+    #[test]
+    fn rm_cannot_delete_root() {
+        let txns = TransactionList::new(Box::new(thread_rng()));
+
+        // Create the global state
+        let mutex = txns.get(ROOT_TRANSACTION).unwrap();
+        let guard = mutex.lock().unwrap();
+        let mut global = guard.borrow_mut();
+        let path1 = Path::from(DOM0_DOMAIN_ID, "/basic/path1");
+
+        global.mkdir(DOM0_DOMAIN_ID, path1.clone())
+            .unwrap();
+
+        let rslt = global.rm(DOM0_DOMAIN_ID, &Path::from(DOM0_DOMAIN_ID, "/"));
+
+        match rslt {
+            Ok(_) => assert!(false, "removed the root directory"),
+            Err(Error::EINVAL(_)) => assert!(true, "it is invalid to try and remove /"),
+            Err(_) => assert!(false, "unknown error"),
+        }
+
+        // verify the root still exists
+        let read = global.read(DOM0_DOMAIN_ID, &Path::from(DOM0_DOMAIN_ID, "/"))
+            .unwrap();
+        assert_eq!(read, "");
+    }
+
+    #[test]
+    fn rm_removes_from_parent() {
+        let txns = TransactionList::new(Box::new(thread_rng()));
+
+        // Create the global state
+        let mutex = txns.get(ROOT_TRANSACTION).unwrap();
+        let guard = mutex.lock().unwrap();
+        let mut global = guard.borrow_mut();
+        let path1 = Path::from(DOM0_DOMAIN_ID, "/basic/path1");
+        let path2 = Path::from(DOM0_DOMAIN_ID, "/basic/path2");
+        let basic = path1.parent()
+            .unwrap();
+        global.mkdir(DOM0_DOMAIN_ID, path1.clone())
+            .unwrap();
+        global.mkdir(DOM0_DOMAIN_ID, path2.clone())
+            .unwrap();
+
+        global.rm(DOM0_DOMAIN_ID, &path1)
+            .unwrap();
+
+        // verify the path1 directory was removed
+        match global.read(DOM0_DOMAIN_ID, &path1) {
+            Err(Error::ENOENT(_)) => assert!(true),
+            Err(ref e) => assert!(false, format!("unexpected error returned {:?}", e)),
+            Ok(_) => assert!(false, format!("failed to remove {:?}", basic)),
+        }
+
+        let subdirs = global.subdirs(DOM0_DOMAIN_ID, &basic).unwrap();
+        assert_eq!(subdirs, vec![String::from("path2")]);
     }
 
     #[test]
