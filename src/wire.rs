@@ -141,11 +141,40 @@ impl Arbitrary for Header {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct Body(Vec<Vec<u8>>);
+
+impl Body {
+    pub fn parse(header: &Header, body: &[u8]) -> Option<Body> {
+        if header.len as usize != body.len() {
+            return None;
+        }
+
+        // check that we're null terminated
+        match body.len() {
+            0 => return None,
+            n @ _ => {
+                if body[n - 1] != b'\0' {
+                    return None;
+                }
+            }
+        }
+
+        // break the payload at NULL characters
+        let res: Vec<Vec<u8>> = body.split(|b| *b == b'\0')
+            .filter(|f| f.len() != 0)
+            .map(|f| f.to_owned())
+            .collect();
+
+        Some(Body(res))
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
-    use super::Header;
-    use super::quickcheck::quickcheck;
+    use super::{Body, Header};
+    use super::quickcheck::{quickcheck, Arbitrary, Gen};
 
     #[test]
     fn header_parse_values() {
@@ -191,4 +220,49 @@ mod tests {
 
         quickcheck(prop as fn(Vec<u8>) -> bool);
     }
+
+    #[test]
+    fn body_parse() {
+
+        #[derive(Clone, Debug, PartialEq)]
+        struct BodyBytes(Vec<u8>);
+
+        impl Arbitrary for BodyBytes {
+            fn arbitrary<G: Gen>(g: &mut G) -> BodyBytes {
+                let size = g.gen_range(0, 4096);
+                let mut vec = Vec::<u8>::with_capacity(size);
+                g.fill_bytes(&mut vec);
+
+                BodyBytes(vec)
+            }
+        }
+
+        fn prop(bytes: BodyBytes) -> bool {
+            // get the byte vector
+            let bytes = bytes.0;
+
+            // if its not NULL terminated then we need to bail
+            let expected = match bytes.len() {
+                0 => false,
+                _ => bytes[bytes.len() - 1] == b'\0',
+            };
+
+            // build a header
+            let header = Header {
+                msg_type: 0,
+                req_id: 0,
+                tx_id: 0,
+                len: bytes.len() as u32,
+            };
+
+            // did it parse
+            let result = Body::parse(&header, &bytes).is_some();
+
+            // moar logical biconditional
+            !(expected ^ result)
+        }
+
+        quickcheck(prop as fn(BodyBytes) -> bool);
+    }
+
 }
