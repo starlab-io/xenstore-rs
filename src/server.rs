@@ -187,7 +187,7 @@ impl Connection {
 
         let result = match self.state {
             State::AwaitingHeader(..) |
-            State::AwaitingPayload(..) => {
+            State::AwaitingBody(..) => {
                 assert!(events.is_readable(),
                         "CONN: {:?} unexpected events: {:?}",
                         self.token,
@@ -246,7 +246,7 @@ impl Connection {
 
         let event_set = match self.state {
             State::AwaitingHeader(..) => mio::EventSet::readable(),
-            State::AwaitingPayload(..) => mio::EventSet::readable(),
+            State::AwaitingBody(..) => mio::EventSet::readable(),
             State::Write(..) => mio::EventSet::writable(),
             State::Closed => {
                 return event_loop.deregister(&self.sock);
@@ -273,13 +273,13 @@ impl Connection {
         let new_state = match self.state {
             State::AwaitingHeader(ref mut buf) => {
                 if let Some(header) = try!(Self::read_header(&mut self.sock, buf)) {
-                    Some(State::transition_awaiting_payload(header))
+                    Some(State::transition_awaiting_body(header))
                 } else {
                     None
                 }
             }
-            State::AwaitingPayload(ref h, ref mut buf) => {
-                try!(Self::read_payload(&mut self.sock, h, buf)).map(|_| {
+            State::AwaitingBody(ref h, ref mut buf) => {
+                try!(Self::read_body(&mut self.sock, h, buf)).map(|_| {
                     let resp = vec![];
                     let resp_hdr = wire::Header { len: 0, ..h.clone() };
                     State::transition_write_msg(resp_hdr, resp)
@@ -314,11 +314,11 @@ impl Connection {
         }
     }
 
-    /// Read the payload from the socket
-    fn read_payload<R: io::Read>(input: &mut R,
-                                 header: &wire::Header,
-                                 buf: &mut Vec<u8>)
-                                 -> io::Result<Option<wire::Body>> {
+    /// Read the body from the socket
+    fn read_body<R: io::Read>(input: &mut R,
+                              header: &wire::Header,
+                              buf: &mut Vec<u8>)
+                              -> io::Result<Option<wire::Body>> {
         try!(input.try_read_buf(buf));
         Ok(wire::Body::parse(header, buf))
     }
@@ -326,8 +326,8 @@ impl Connection {
     /// Handle write events for the connection from the event loop
     fn write(&mut self) -> io::Result<()> {
         let new_state = match self.state {
-            State::Write(ref header, ref payload) => {
-                match try!(Self::write_msg(&mut self.sock, header, payload)) {
+            State::Write(ref header, ref body) => {
+                match try!(Self::write_msg(&mut self.sock, header, body)) {
                     Some(_) => Some(State::transition_awaiting_header()),
                     None => None,
                 }
@@ -385,8 +385,8 @@ impl Connection {
 enum State {
     // read the header into the buffer
     AwaitingHeader(Vec<u8>),
-    // read the payload into the buffer
-    AwaitingPayload(wire::Header, Vec<u8>),
+    // read the body into the buffer
+    AwaitingBody(wire::Header, Vec<u8>),
     // write the message out
     Write(wire::Header, io::Cursor<Vec<u8>>),
     // closed and time to clean up
@@ -398,9 +398,9 @@ impl State {
         State::AwaitingHeader(Vec::<u8>::with_capacity(wire::HEADER_SIZE))
     }
 
-    fn transition_awaiting_payload(header: wire::Header) -> State {
+    fn transition_awaiting_body(header: wire::Header) -> State {
         let len = header.len();
-        State::AwaitingPayload(header, Vec::<u8>::with_capacity(len))
+        State::AwaitingBody(header, Vec::<u8>::with_capacity(len))
     }
 
     fn transition_write_msg(header: wire::Header, msg: Vec<u8>) -> State {
