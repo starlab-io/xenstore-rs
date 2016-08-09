@@ -279,10 +279,11 @@ impl Connection {
                 }
             }
             State::AwaitingPayload(ref h, ref mut buf) => {
-                let _ = try!(Self::read_payload(&mut self.sock, buf));
-                let resp = vec![];
-                let resp_hdr = wire::Header { len: 0, ..h.clone() };
-                Some(State::transition_write_msg(resp_hdr, resp))
+                try!(Self::read_payload(&mut self.sock, h, buf)).map(|_| {
+                    let resp = vec![];
+                    let resp_hdr = wire::Header { len: 0, ..h.clone() };
+                    State::transition_write_msg(resp_hdr, resp)
+                })
             }
             _ => unreachable!(),
         };
@@ -314,9 +315,12 @@ impl Connection {
     }
 
     /// Read the payload from the socket
-    fn read_payload<R: io::Read>(input: &mut R, buf: &mut Vec<u8>) -> io::Result<()> {
+    fn read_payload<R: io::Read>(input: &mut R,
+                                 header: &wire::Header,
+                                 buf: &mut Vec<u8>)
+                                 -> io::Result<Option<wire::Body>> {
         try!(input.try_read_buf(buf));
-        Ok(())
+        Ok(wire::Body::parse(header, buf))
     }
 
     /// Handle write events for the connection from the event loop
