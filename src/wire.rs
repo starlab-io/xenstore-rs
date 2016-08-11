@@ -142,7 +142,7 @@ impl Arbitrary for Header {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Body(Vec<Vec<u8>>);
+pub struct Body(pub Vec<Vec<u8>>);
 
 impl Body {
     pub fn parse(header: &Header, body: &[u8]) -> Option<Body> {
