@@ -33,6 +33,7 @@ extern crate try_opt;
 
 pub mod error;
 pub mod path;
+pub mod server;
+pub mod store;
 pub mod transaction;
 pub mod wire;
-pub mod server;
