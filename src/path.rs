@@ -84,4 +84,32 @@ impl Path {
             }
         }
     }
+
+    pub fn is_child(self: &Path, parent: &Path) -> bool {
+        let (child, parent) = match (self.realpath(), parent.realpath()) {
+            (Path::Absolute(child), Path::Absolute(parent)) => (child, parent),
+            (_, _) => unreachable!(),
+        };
+
+        child.starts_with(&parent)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn is_child() {
+        let root = Path::from(0, "/");
+        let child = Path::from(0, "/root/filesystem/test");
+        let parent = child.parent().unwrap();
+        let grandparent = parent.parent().unwrap();
+
+        assert_eq!(child.is_child(&parent), true);
+        assert_eq!(parent.is_child(&child), false);
+
+        assert_eq!(child.is_child(&grandparent), true);
+        assert_eq!(child.is_child(&root), true);
+    }
 }
