@@ -51,21 +51,25 @@ pub struct Node {
     pub permissions: Vec<Permission>,
 }
 
+fn perms_ok(dom_id: wire::DomainId, permissions: &[Permission], perm: Perm) -> bool {
+    let mask = PERM_READ | PERM_WRITE | PERM_OWNER;
+
+    if dom_id == DOM0_DOMAIN_ID || permissions[0].id == dom_id {
+        return (mask & perm) == perm;
+    }
+
+    for p in permissions.iter() {
+        if p.id == dom_id {
+            return (p.perm & perm) == perm;
+        }
+    }
+
+    return permissions[0].perm & perm == perm;
+}
+
 impl Node {
     pub fn perms_ok(&self, dom_id: wire::DomainId, perm: Perm) -> bool {
-        let mask = PERM_READ | PERM_WRITE | PERM_OWNER;
-
-        if dom_id == DOM0_DOMAIN_ID || self.permissions[0].id == dom_id {
-            return (mask & perm) == perm;
-        }
-
-        for p in self.permissions.iter() {
-            if p.id == dom_id {
-                return (p.perm & perm) == perm;
-            }
-        }
-
-        return self.permissions[0].perm & perm == perm;
+        perms_ok(dom_id, &self.permissions, perm)
     }
 }
 
@@ -111,6 +115,12 @@ impl ChangeSet {
 pub struct AppliedChange {
     pub path: Path,
     pub permissions: Vec<Permission>,
+}
+
+impl AppliedChange {
+    pub fn perms_ok(&self, dom_id: wire::DomainId, perm: Perm) -> bool {
+        perms_ok(dom_id, &self.permissions, perm)
+    }
 }
 
 /// Insert manual entries into a Store
