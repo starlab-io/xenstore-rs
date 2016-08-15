@@ -112,14 +112,22 @@ impl ChangeSet {
     }
 }
 
-pub struct AppliedChange {
-    pub path: Path,
-    pub permissions: Vec<Permission>,
+#[derive(Debug)]
+pub enum AppliedChange {
+    Write(Path, Vec<Permission>),
+    Remove(Path),
+    IntroduceDomain,
+    ReleaseDomain,
 }
 
 impl AppliedChange {
     pub fn perms_ok(&self, dom_id: wire::DomainId, perm: Perm) -> bool {
-        perms_ok(dom_id, &self.permissions, perm)
+        match *self {
+            AppliedChange::Write(_, ref permissions) => perms_ok(dom_id, permissions, perm),
+            AppliedChange::Remove(_) => true,
+            AppliedChange::IntroduceDomain => true,
+            AppliedChange::ReleaseDomain => true,
+        }
     }
 }
 
@@ -169,21 +177,16 @@ impl Store {
         let mut applied = vec![];
 
         for (ref path, ref change) in change_set.changes {
-            let ref node = match change {
+            match change {
                 &Change::Write(ref node) => {
                     self.store.insert(path.clone(), node.clone());
-                    node
+                    applied.push(AppliedChange::Write(path.clone(), node.permissions.clone()));
                 }
-                &Change::Remove(ref node) => {
+                &Change::Remove(_) => {
                     self.store.remove(path);
-                    node
+                    applied.push(AppliedChange::Remove(path.clone()));
                 }
-            };
-
-            applied.push(AppliedChange {
-                path: path.clone(),
-                permissions: node.permissions.clone(),
-            });
+            }
         }
 
         self.generation += Wrapping(1);

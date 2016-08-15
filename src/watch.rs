@@ -23,16 +23,44 @@ use super::store::{self, AppliedChange};
 use super::wire;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum WPath {
+    Normal(Path),
+    IntroduceDomain,
+    ReleaseDomain,
+}
+
+impl WPath {
+    pub fn from(dom_id: wire::DomainId, s: &str) -> WPath {
+        match s {
+            "@introduceDomain" => WPath::IntroduceDomain,
+            "@releaseDomain" => WPath::ReleaseDomain,
+            _ => WPath::Normal(Path::from(dom_id, s)),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Watch {
     dom_id: wire::DomainId,
-    path: Path,
+    path: WPath,
 }
 
 impl Watch {
-    pub fn new(dom_id: wire::DomainId, path: Path) -> Watch {
+    pub fn new(dom_id: wire::DomainId, path: WPath) -> Watch {
         Watch {
             dom_id: dom_id,
             path: path,
+        }
+    }
+
+    pub fn matches(&self, change: &AppliedChange) -> bool {
+        match (change, &self.path) {
+            (&AppliedChange::Write(ref cpath, _), &WPath::Normal(ref wpath)) => {
+                cpath == wpath && change.perms_ok(self.dom_id, store::PERM_READ)
+            }
+            (&AppliedChange::IntroduceDomain, &WPath::IntroduceDomain) => true,
+            (&AppliedChange::ReleaseDomain, &WPath::ReleaseDomain) => true,
+            (_, _) => false,
         }
     }
 }
@@ -46,7 +74,7 @@ impl WatchList {
         WatchList { watches: HashSet::new() }
     }
 
-    pub fn watch(&mut self, dom_id: wire::DomainId, path: Path) -> Result<()> {
+    pub fn watch(&mut self, dom_id: wire::DomainId, path: WPath) -> Result<()> {
         if !self.watches.insert(Watch::new(dom_id, path.clone())) {
             return Err(Error::EEXIST(format!("watch {:?} already exists for domain {:?}",
                                              path,
@@ -55,7 +83,7 @@ impl WatchList {
         Ok(())
     }
 
-    pub fn unwatch(&mut self, dom_id: wire::DomainId, path: Path) -> Result<()> {
+    pub fn unwatch(&mut self, dom_id: wire::DomainId, path: WPath) -> Result<()> {
         if !self.watches.remove(&Watch::new(dom_id, path.clone())) {
             return Err(Error::ENOENT(format!("watch {:?} did not exist for domain {:?}",
                                              path,
@@ -64,32 +92,29 @@ impl WatchList {
         Ok(())
     }
 
-    pub fn fire(&self, applied_changes: Option<Vec<AppliedChange>>) -> Vec<Watch> {
+    pub fn fire_single(&self, single: &AppliedChange) -> HashSet<Watch> {
+        self.watches
+            .iter()
+            .filter(|watch| watch.matches(single))
+            .cloned()
+            .collect::<HashSet<Watch>>()
+    }
+
+    pub fn fire(&self, applied_changes: Option<Vec<AppliedChange>>) -> HashSet<Watch> {
         if let Some(changes) = applied_changes {
             changes.iter()
-                .flat_map(|change| {
-                    self.watches
-                        .iter()
-                        .filter(|watch| {
-                            change.path.is_child(&watch.path) &&
-                            change.perms_ok(watch.dom_id, store::PERM_READ)
-                        })
-                        .cloned()
-                        .collect::<Vec<Watch>>()
-                })
-                .collect::<Vec<Watch>>()
+                .flat_map(|change| self.fire_single(&change))
+                .collect::<HashSet<Watch>>()
         } else {
-            vec![]
+            HashSet::new()
         }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashSet;
-    use std::iter::FromIterator;
     use super::super::path::Path;
-    use super::super::store::{self, Value, DOM0_DOMAIN_ID, Store, ChangeSet};
+    use super::super::store::{self, Value, DOM0_DOMAIN_ID, Store, AppliedChange, ChangeSet};
     use super::*;
 
     #[test]
@@ -99,7 +124,7 @@ mod test {
         let path = Path::from(DOM0_DOMAIN_ID, "/root/file/path");
         let value = Value::from("value");
 
-        watch_list.watch(DOM0_DOMAIN_ID, path.clone()).unwrap();
+        watch_list.watch(DOM0_DOMAIN_ID, WPath::Normal(path.clone())).unwrap();
 
         let changes = store.write(&ChangeSet::new(&store),
                    DOM0_DOMAIN_ID,
@@ -111,8 +136,11 @@ mod test {
         let watches = watch_list.fire(applied);
 
         assert_eq!(watches.len(), 1);
-        assert_eq!(watches[0].dom_id, DOM0_DOMAIN_ID);
-        assert_eq!(watches[0].path, path);
+        assert_eq!(watches.contains(&Watch {
+                       dom_id: DOM0_DOMAIN_ID,
+                       path: WPath::Normal(path),
+                   }),
+                   true);
     }
 
     #[test]
@@ -122,8 +150,8 @@ mod test {
         let path = Path::from(DOM0_DOMAIN_ID, "/root/file/path");
         let value = Value::from("value");
 
-        watch_list.watch(DOM0_DOMAIN_ID, path.clone()).unwrap();
-        watch_list.watch(1, path.clone()).unwrap();
+        watch_list.watch(DOM0_DOMAIN_ID, WPath::Normal(path.clone())).unwrap();
+        watch_list.watch(1, WPath::Normal(path.clone())).unwrap();
 
         let changes = store.write(&ChangeSet::new(&store),
                    DOM0_DOMAIN_ID,
@@ -135,8 +163,11 @@ mod test {
         let watches = watch_list.fire(applied);
 
         assert_eq!(watches.len(), 1);
-        assert_eq!(watches[0].dom_id, DOM0_DOMAIN_ID);
-        assert_eq!(watches[0].path, path);
+        assert_eq!(watches.contains(&Watch {
+                       dom_id: DOM0_DOMAIN_ID,
+                       path: WPath::Normal(path),
+                   }),
+                   true);
     }
 
     #[test]
@@ -146,8 +177,8 @@ mod test {
         let path = Path::from(DOM0_DOMAIN_ID, "/root/file/path");
         let value = Value::from("value");
 
-        watch_list.watch(DOM0_DOMAIN_ID, path.clone()).unwrap();
-        watch_list.watch(1, path.clone()).unwrap();
+        watch_list.watch(DOM0_DOMAIN_ID, WPath::Normal(path.clone())).unwrap();
+        watch_list.watch(1, WPath::Normal(path.clone())).unwrap();
 
         let changes = store.write(&ChangeSet::new(&store),
                    DOM0_DOMAIN_ID,
@@ -167,12 +198,126 @@ mod test {
         let applied = store.apply(changes);
         let watches = watch_list.fire(applied);
 
-        let watches: HashSet<Watch> = HashSet::from_iter(watches.iter()
-            .cloned());
+        assert_eq!(watches.len(), 2);
+        assert_eq!(watches.contains(&Watch::new(DOM0_DOMAIN_ID, WPath::Normal(path.clone()))),
+                   true);
+        assert_eq!(watches.contains(&Watch::new(1, WPath::Normal(path.clone()))),
+                   true);
+    }
+
+    #[test]
+    fn basic_watch_parent() {
+        let mut watch_list = WatchList::new();
+        let mut store = Store::new();
+        let path = Path::from(DOM0_DOMAIN_ID, "/root/file/path");
+        let value = Value::from("value");
+
+        watch_list.watch(DOM0_DOMAIN_ID, WPath::Normal(path.parent().unwrap())).unwrap();
+
+        let changes = store.write(&ChangeSet::new(&store),
+                   DOM0_DOMAIN_ID,
+                   path.clone(),
+                   value.clone())
+            .unwrap();
+
+        let applied = store.apply(changes);
+        let watches = watch_list.fire(applied);
+
+        assert_eq!(watches.len(), 1);
+        assert_eq!(watches.contains(&Watch {
+                       dom_id: DOM0_DOMAIN_ID,
+                       path: WPath::Normal(path.parent().unwrap()),
+                   }),
+                   true);
+
+        let changes = store.write(&ChangeSet::new(&store),
+                   DOM0_DOMAIN_ID,
+                   path.clone(),
+                   Value::from("value 2"))
+            .unwrap();
+
+        let applied = store.apply(changes);
+        let watches = watch_list.fire(applied);
+
+        assert_eq!(watches.len(), 0);
+    }
+
+    #[test]
+    fn basic_watch_remove() {
+        let mut watch_list = WatchList::new();
+        let mut store = Store::new();
+        let path = Path::from(DOM0_DOMAIN_ID, "/root/file/path");
+        let value = Value::from("value");
+
+        watch_list.watch(DOM0_DOMAIN_ID, WPath::Normal(path.parent().unwrap())).unwrap();
+        watch_list.watch(DOM0_DOMAIN_ID, WPath::Normal(path.clone())).unwrap();
+
+        let changes = store.write(&ChangeSet::new(&store),
+                   DOM0_DOMAIN_ID,
+                   path.clone(),
+                   value.clone())
+            .unwrap();
+
+        let applied = store.apply(changes);
+        let watches = watch_list.fire(applied);
 
         assert_eq!(watches.len(), 2);
-        assert_eq!(watches.contains(&Watch::new(DOM0_DOMAIN_ID, path.clone())),
+        assert_eq!(watches.contains(&Watch {
+                       dom_id: DOM0_DOMAIN_ID,
+                       path: WPath::Normal(path.parent().unwrap()),
+                   }),
                    true);
-        assert_eq!(watches.contains(&Watch::new(1, path.clone())), true);
+        assert_eq!(watches.contains(&Watch {
+                       dom_id: DOM0_DOMAIN_ID,
+                       path: WPath::Normal(path.clone()),
+                   }),
+                   true);
+
+        let changes = store.rm(&ChangeSet::new(&store), DOM0_DOMAIN_ID, &path)
+            .unwrap();
+
+        let applied = store.apply(changes);
+        let watches = watch_list.fire(applied);
+
+        assert_eq!(watches.len(), 1);
+        assert_eq!(watches.contains(&Watch {
+                       dom_id: DOM0_DOMAIN_ID,
+                       path: WPath::Normal(path.parent().unwrap()),
+                   }),
+                   true);
+    }
+
+    #[test]
+    fn basic_watch_introduce_domain() {
+        let mut watch_list = WatchList::new();
+
+        watch_list.watch(DOM0_DOMAIN_ID, WPath::IntroduceDomain).unwrap();
+        watch_list.watch(DOM0_DOMAIN_ID, WPath::ReleaseDomain).unwrap();
+
+        let watches = watch_list.fire_single(&AppliedChange::IntroduceDomain);
+
+        assert_eq!(watches.len(), 1);
+        assert_eq!(watches.contains(&Watch {
+                       dom_id: DOM0_DOMAIN_ID,
+                       path: WPath::IntroduceDomain,
+                   }),
+                   true);
+    }
+
+    #[test]
+    fn basic_watch_release_domain() {
+        let mut watch_list = WatchList::new();
+
+        watch_list.watch(DOM0_DOMAIN_ID, WPath::IntroduceDomain).unwrap();
+        watch_list.watch(DOM0_DOMAIN_ID, WPath::ReleaseDomain).unwrap();
+
+        let watches = watch_list.fire_single(&AppliedChange::ReleaseDomain);
+
+        assert_eq!(watches.len(), 1);
+        assert_eq!(watches.contains(&Watch {
+                       dom_id: DOM0_DOMAIN_ID,
+                       path: WPath::ReleaseDomain,
+                   }),
+                   true);
     }
 }
