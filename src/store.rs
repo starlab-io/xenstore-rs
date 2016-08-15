@@ -228,50 +228,72 @@ impl Store {
                       path: Path,
                       value: Value)
                       -> Result<LinkedList<Node>> {
-        // Get a list of all of the parent nodes that need to be modified/created
-        let parent_path = path.parent().unwrap();
-        let mut parent_list = match self.get_node(change_set, dom_id, &parent_path, PERM_WRITE) {
+
+        // Get a list of paths that need to be created
+        let paths_to_create = path.clone()
+            .into_iter()
+            .take_while(|ref path| {
+                match self.get_node(change_set, dom_id, path, PERM_WRITE) {
+                    Err(Error::ENOENT(_)) => true,
+                    _ => false,
+                }
+            })
+            .collect::<LinkedList<Path>>();
+
+        // If we are trying to construct a node and cannot, it is due to access restritions
+        if paths_to_create.is_empty() {
+            return Err(Error::EACCES(format!("could not create {:?}", path)));
+        }
+
+        // Get a copy of the highest parent that does not need to be created
+        let parent_path = paths_to_create.back()
+            .unwrap()
+            .parent()
+            .unwrap();
+        let mut list = match self.get_node(change_set, dom_id, &parent_path, PERM_WRITE) {
             Ok(parent) => {
                 let mut lst = LinkedList::new();
                 lst.push_back(parent.clone());
                 lst
             }
-            Err(Error::ENOENT(_)) => {
-                let lst =
-                    try!(self.construct_node(change_set, dom_id, parent_path, Value::from("")));
-                lst
-            }
+            Err(Error::ENOENT(_)) => unreachable!(),
             Err(err) => return Err(err),
         };
 
-        let node = {
+        // Modify and create all of the nodes necessary
+        for path in paths_to_create.iter().rev() {
             // Grab the immediate parent, since we need to insert this as a child
-            let mut parent = parent_list.front_mut().unwrap();
-            if let Some(basename) = path.basename() {
-                parent.children.insert(basename);
-            }
+            let node = {
+                let mut parent = list.front_mut().unwrap();
+                if let Some(basename) = path.basename() {
+                    parent.children.insert(basename);
+                }
 
-            // Clone the immediate parent node's permissions
-            let mut permissions = parent.permissions.clone();
-            if dom_id != DOM0_DOMAIN_ID {
-                // except for the unprivileged domains, which own what
-                // it creates
-                permissions[0].id = dom_id;
-            }
+                // Clone the immediate parent node's permissions
+                let mut permissions = parent.permissions.clone();
+                if dom_id != DOM0_DOMAIN_ID {
+                    // except for the unprivileged domains, which own what
+                    // it creates
+                    permissions[0].id = dom_id;
+                }
 
-            // Create the node
-            Node {
-                path: path.clone(),
-                value: value,
-                children: HashSet::new(),
-                permissions: permissions,
-            }
-        };
+                // Create the node
+                Node {
+                    path: path.clone(),
+                    value: Value::from(""),
+                    children: HashSet::new(),
+                    permissions: permissions,
+                }
+            };
 
-        // And return that as a list
-        let mut list = LinkedList::new();
-        list.push_front(node);
-        list.append(&mut parent_list);
+            list.push_front(node);
+        }
+
+        // All of the created nodes had an empty value, so we need
+        // to set the real value on the last created node (the one
+        // we ultimately set out to create).
+        list.front_mut().unwrap().value = value;
+
         Ok(list)
     }
 
