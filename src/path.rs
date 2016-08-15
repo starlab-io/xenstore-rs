@@ -16,11 +16,46 @@
     with this program; if not, see <http://www.gnu.org/licenses/>.
 **/
 
+use std::iter::{IntoIterator, Iterator};
 use std::path;
 use super::wire;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Path(path::PathBuf);
+pub struct ParentIterator(Option<path::PathBuf>);
+
+impl Iterator for ParentIterator {
+    type Item = Path;
+
+    fn next(&mut self) -> Option<Path> {
+        let current = match self.0 {
+            Some(ref c) => c.to_owned(),
+            None => {
+                return None;
+            }
+        };
+
+        Some(Path(match current.parent() {
+            Some(ref p) => {
+                self.0 = Some(p.to_path_buf());
+                current.clone()
+            }
+            None => {
+                self.0 = None;
+                path::PathBuf::from("/")
+            }
+        }))
+    }
+}
+
+impl IntoIterator for Path {
+    type Item = Path;
+    type IntoIter = ParentIterator;
+
+    fn into_iter(self) -> Self::IntoIter {
+        ParentIterator(Some(self.0.clone()))
+    }
+}
 
 pub fn get_domain_path(dom_id: wire::DomainId) -> Path {
     Path(path::PathBuf::from(format!("/local/domain/{}/", dom_id)))
@@ -84,5 +119,17 @@ mod test {
 
         assert_eq!(child.is_child(&grandparent), true);
         assert_eq!(child.is_child(&root), true);
+    }
+
+    #[test]
+    fn iterator() {
+        let path = Path::from(0, "/root/filesystem/test");
+        let mut iter = path.into_iter();
+
+        assert_eq!(iter.next(), Some(Path::from(0, "/root/filesystem/test")));
+        assert_eq!(iter.next(), Some(Path::from(0, "/root/filesystem")));
+        assert_eq!(iter.next(), Some(Path::from(0, "/root")));
+        assert_eq!(iter.next(), Some(Path::from(0, "/")));
+        assert_eq!(iter.next().is_none(), true);
     }
 }
