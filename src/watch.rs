@@ -92,6 +92,18 @@ impl WatchList {
         Ok(())
     }
 
+    pub fn reset(&mut self, dom_id: wire::DomainId) -> Result<()> {
+        let to_remove = self.watches
+            .iter()
+            .filter(|watch| watch.dom_id == dom_id)
+            .cloned()
+            .collect::<Vec<Watch>>();
+        for watch in to_remove {
+            self.watches.remove(&watch);
+        }
+        Ok(())
+    }
+
     pub fn fire_single(&self, single: &AppliedChange) -> HashSet<Watch> {
         self.watches
             .iter()
@@ -316,6 +328,24 @@ mod test {
         assert_eq!(watches.len(), 1);
         assert_eq!(watches.contains(&Watch {
                        dom_id: DOM0_DOMAIN_ID,
+                       path: WPath::ReleaseDomain,
+                   }),
+                   true);
+    }
+
+    #[test]
+    fn basic_watch_reset() {
+        let mut watch_list = WatchList::new();
+
+        watch_list.watch(DOM0_DOMAIN_ID, WPath::IntroduceDomain).unwrap();
+        watch_list.watch(DOM0_DOMAIN_ID, WPath::ReleaseDomain).unwrap();
+        watch_list.watch(1, WPath::ReleaseDomain).unwrap();
+
+        watch_list.reset(DOM0_DOMAIN_ID).unwrap();
+
+        assert_eq!(watch_list.watches.len(), 1);
+        assert_eq!(watch_list.watches.contains(&Watch {
+                       dom_id: 1,
                        path: WPath::ReleaseDomain,
                    }),
                    true);
