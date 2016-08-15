@@ -20,78 +20,51 @@ use std::path;
 use super::wire;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub enum Path {
-    Absolute(path::PathBuf),
-    Relative(wire::DomainId, path::PathBuf),
+pub struct Path(path::PathBuf);
+
+pub fn get_domain_path(dom_id: wire::DomainId) -> Path {
+    Path(path::PathBuf::from(format!("/local/domain/{}/", dom_id)))
 }
 
 impl Path {
     pub fn from(dom_id: wire::DomainId, s: &str) -> Path {
-        let internal = path::PathBuf::from(s);
-        if internal.is_absolute() {
-            return Path::Absolute(internal);
-        } else {
-            return Path::Relative(dom_id, internal);
-        }
-    }
-
-    pub fn realpath(self: &Path) -> Path {
-        match *self {
-            Path::Absolute(_) => self.clone(),
-            Path::Relative(d, ref p) => {
-                let mut real = path::PathBuf::from(format!("/local/domain/{}/", d));
-                real.push(p);
-
-                Path::Absolute(real)
+        let input = path::PathBuf::from(s);
+        let internal = {
+            if input.is_absolute() {
+                input
+            } else {
+                let mut real = get_domain_path(dom_id);
+                real.0.push(input);
+                real.0
             }
-        }
+        };
+
+        Path(internal)
     }
 
     pub fn basename(self: &Path) -> Option<String> {
-        match self.realpath() {
-            Path::Absolute(realpath) => {
-                realpath.as_path()
-                    .file_name()
-                    .and_then(|bn| bn.to_str())
-                    .map(|bn| bn.to_owned())
-            }
-            _ => unreachable!(),
-        }
+        self.0
+            .as_path()
+            .file_name()
+            .and_then(|bn| bn.to_str())
+            .map(|bn| bn.to_owned())
     }
 
     pub fn parent(self: &Path) -> Option<Path> {
-        match self.realpath() {
-            Path::Absolute(realpath) => {
-                realpath.as_path()
-                    .parent()
-                    .map(|parent| Path::Absolute(parent.to_path_buf()))
-            }
-            _ => unreachable!(),
-        }
+        self.0
+            .as_path()
+            .parent()
+            .map(|parent| Path(parent.to_path_buf()))
     }
 
     pub fn push(self: &Path, component: &str) -> Path {
-        match *self {
-            Path::Absolute(ref path) => {
-                let mut path = path.clone();
-                path.push(component);
-                Path::Absolute(path)
-            }
-            Path::Relative(d, ref path) => {
-                let mut path = path.clone();
-                path.push(component);
-                Path::Relative(d, path)
-            }
-        }
+        let mut path = self.0.clone();
+        path.push(component);
+        Path(path)
     }
 
     pub fn is_child(self: &Path, parent: &Path) -> bool {
-        let (child, parent) = match (self.realpath(), parent.realpath()) {
-            (Path::Absolute(child), Path::Absolute(parent)) => (child, parent),
-            (_, _) => unreachable!(),
-        };
-
-        child.starts_with(&parent)
+        self.0.starts_with(&parent.0)
     }
 }
 

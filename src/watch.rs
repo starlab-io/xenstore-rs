@@ -32,7 +32,7 @@ impl Watch {
     pub fn new(dom_id: wire::DomainId, path: Path) -> Watch {
         Watch {
             dom_id: dom_id,
-            path: path.realpath(),
+            path: path,
         }
     }
 }
