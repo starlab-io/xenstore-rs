@@ -16,27 +16,14 @@
     with this program; if not, see <http://www.gnu.org/licenses/>.
 **/
 
-extern crate byteorder;
-#[macro_use]
-extern crate bitflags;
+use wire;
 
-#[macro_use]
-extern crate lazy_static;
+pub type Mfn = u64;
+pub type EvtChnPort = u16;
 
-#[macro_use]
-extern crate log;
-
-extern crate rand;
-
-#[macro_use]
-extern crate try_opt;
-
-pub mod error;
-pub mod message;
-pub mod path;
-pub mod server;
-pub mod store;
-pub mod system;
-pub mod transaction;
-pub mod watch;
-pub mod wire;
+#[derive(Clone, Copy, Debug)]
+pub struct Metadata {
+    pub dom_id: wire::DomainId,
+    pub req_id: wire::ReqId,
+    pub tx_id: wire::TxId,
+}
