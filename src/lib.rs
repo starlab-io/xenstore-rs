@@ -35,6 +35,7 @@ pub mod error;
 pub mod path;
 pub mod server;
 pub mod store;
+pub mod system;
 pub mod transaction;
 pub mod watch;
 pub mod wire;
