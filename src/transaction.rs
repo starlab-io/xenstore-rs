@@ -17,7 +17,7 @@
 **/
 
 use error::{Error, Result};
-use rand::Rng;
+use rand::{Rng, thread_rng};
 use std::boxed::Box;
 use std::collections::HashMap;
 use super::wire;
@@ -34,9 +34,8 @@ struct Transaction {
 /// The `TransactionList` type.
 ///
 /// Used to access transactions by TxId as well as start and end transactions.
-pub struct TransactionList<R: Rng + ?Sized> {
+pub struct TransactionList {
     list: HashMap<wire::TxId, Transaction>,
-    rng: Box<R>,
 }
 
 /// The `TransactionStatus` type.
@@ -50,33 +49,30 @@ pub enum TransactionStatus {
     Failure,
 }
 
-impl<R: Rng + ?Sized> TransactionList<R> {
-    /// Create a new instance of the `TransactionList`.
-    pub fn new(rng: Box<R>) -> TransactionList<R> {
-        TransactionList::<R> {
-            list: HashMap::new(),
-            rng: rng,
+/// Generate a random TxId
+fn generate_txid<R: Rng + Sized, V>(rng: &mut Box<R>, list: &HashMap<wire::TxId, V>) -> wire::TxId {
+    loop {
+        // Get a random transaction id
+        let id = rng.next_u32();
+        // If the transaction id is not currently used
+        if id != ROOT_TRANSACTION && !list.contains_key(&id) {
+            // make it the one we will use for this transaction
+            return id;
         }
     }
+}
 
-    /// Generate a random TxId
-    fn generate_txid(&mut self) -> wire::TxId {
-        loop {
-            // Get a random transaction id
-            let id = self.rng.next_u32();
-            // If the transaction id is not currently used
-            if id != ROOT_TRANSACTION && !self.list.contains_key(&id) {
-                // make it the one we will use for this transaction
-                return id;
-            }
-        }
+impl TransactionList {
+    /// Create a new instance of the `TransactionList`.
+    pub fn new() -> TransactionList {
+        TransactionList { list: HashMap::new() }
     }
 
     /// Start a new transaction.
     ///
     /// Returns the `TxId` associated with the new transaction.
     pub fn start(&mut self, dom_id: wire::DomainId, store: &Store) -> wire::TxId {
-        let next_id = self.generate_txid();
+        let next_id = generate_txid(&mut Box::new(thread_rng()), &self.list);
         let changes = ChangeSet::new(store);
 
         self.list.insert(next_id,
@@ -203,13 +199,15 @@ impl<R: Rng + ?Sized> TransactionList<R> {
 
 #[cfg(test)]
 mod test {
-    use rand::{Rng, thread_rng};
+    use rand::Rng;
     use std::boxed::Box;
+    use std::collections::HashMap;
     use std::num::Wrapping;
     use super::super::error::Error;
     use super::super::path::Path;
     use super::super::store::{Value, DOM0_DOMAIN_ID, Store, ChangeSet};
     use super::*;
+    use super::generate_txid;
 
     #[test]
     fn check_transaction_id_reuse() {
@@ -225,20 +223,25 @@ mod test {
             }
         }
 
-        let store = Store::new();
+        let mut lst = HashMap::new();
+        let next_id = generate_txid(&mut Box::new(TestRng { next: Wrapping(0) }), &lst);
+        lst.insert(next_id, ());
+        assert_eq!(next_id, 1);
 
-        let mut txns = TransactionList::new(Box::new(TestRng { next: Wrapping(0) }));
-        assert_eq!(txns.start(DOM0_DOMAIN_ID, &store), 1);
+        let mut lst = HashMap::new();
+        let mut rng = Box::new(TestRng { next: Wrapping(u32::max_value()) });
+        let next_id = generate_txid(&mut rng, &lst);
+        lst.insert(next_id, ());
+        assert_eq!(next_id, u32::max_value());
 
-        let mut txns = TransactionList::new(Box::new(TestRng { next: Wrapping(u32::max_value()) }));
-        assert_eq!(txns.start(DOM0_DOMAIN_ID, &store), u32::max_value());
-        assert_eq!(txns.start(DOM0_DOMAIN_ID, &store), 1);
+        let next_id = generate_txid(&mut rng, &lst);
+        assert_eq!(next_id, 1);
     }
 
     #[test]
     fn transaction_changeset_can_be_retrieved() {
         let store = Store::new();
-        let mut txns = TransactionList::new(Box::new(thread_rng()));
+        let mut txns = TransactionList::new();
 
         // Create a new transaction
         let tx_id = txns.start(DOM0_DOMAIN_ID, &store);
@@ -253,7 +256,7 @@ mod test {
         let value = Value::from("value");
 
         let store = Store::new();
-        let mut txns = TransactionList::new(Box::new(thread_rng()));
+        let mut txns = TransactionList::new();
 
         // Create a new transaction
         let tx_id = txns.start(DOM0_DOMAIN_ID, &store);
@@ -284,7 +287,7 @@ mod test {
         let value = Value::from("value");
 
         let mut store = Store::new();
-        let mut txns = TransactionList::new(Box::new(thread_rng()));
+        let mut txns = TransactionList::new();
 
         // Create a new transaction
         let tx_id = txns.start(DOM0_DOMAIN_ID, &store);
@@ -319,7 +322,7 @@ mod test {
         let value = Value::from("value");
 
         let mut store = Store::new();
-        let mut txns = TransactionList::new(Box::new(thread_rng()));
+        let mut txns = TransactionList::new();
 
         // Create a new transaction
         let tx_id = txns.start(DOM0_DOMAIN_ID, &store);
@@ -358,7 +361,7 @@ mod test {
         let value = Value::from("value");
 
         let mut store = Store::new();
-        let mut txns = TransactionList::new(Box::new(thread_rng()));
+        let mut txns = TransactionList::new();
 
         // Create a new transaction
         let tx_id = txns.start(DOM0_DOMAIN_ID, &store);
@@ -412,7 +415,7 @@ mod test {
         let value = Value::from("value");
 
         let mut store = Store::new();
-        let mut txns = TransactionList::new(Box::new(thread_rng()));
+        let mut txns = TransactionList::new();
 
         // Create a new transaction
         let tx_id = txns.start(DOM0_DOMAIN_ID, &store);
@@ -461,7 +464,7 @@ mod test {
     #[test]
     fn transaction_reset_transactions() {
         let store = Store::new();
-        let mut txns = TransactionList::new(Box::new(thread_rng()));
+        let mut txns = TransactionList::new();
 
         // Create new transactions
         let tx_id_dom0_1 = txns.start(DOM0_DOMAIN_ID, &store);
