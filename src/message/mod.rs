@@ -30,6 +30,7 @@ pub struct Metadata {
     pub tx_id: wire::TxId,
 }
 
+pub mod egress;
 pub mod ingress;
 
 pub trait ProcessMessage {
@@ -96,7 +97,7 @@ impl ProcessMessage for ingress::Restrict {
     fn process(&self, _: &RefMut<system::System>) {}
 }
 
-/// process an error that occurred on the ingress path
+/// process an error that occurred while parsing
 impl ProcessMessage for ingress::ErrorMsg {
     fn process(&self, _: &RefMut<system::System>) {}
 }
