@@ -58,10 +58,8 @@ fn perms_ok(dom_id: wire::DomainId, permissions: &[Permission], perm: Perm) -> b
         return (mask & perm) == perm;
     }
 
-    for p in permissions.iter() {
-        if p.id == dom_id {
-            return (p.perm & perm) == perm;
-        }
+    if let Some(p) = permissions.iter().find(|p| p.id == dom_id) {
+        return (p.perm & perm) == perm;
     }
 
     return permissions[0].perm & perm == perm;
