@@ -169,20 +169,24 @@ impl Store {
             return None;
         }
 
-        let mut applied = vec![];
+        let changes = &change_set.changes;
 
-        for (ref path, ref change) in change_set.changes {
+        for (path, change) in changes {
             match change {
-                &Change::Write(ref node) => {
-                    self.store.insert(path.clone(), node.clone());
-                    applied.push(AppliedChange::Write(path.clone(), node.permissions.clone()));
-                }
-                &Change::Remove(_) => {
-                    self.store.remove(path);
-                    applied.push(AppliedChange::Remove(path.clone()));
-                }
-            }
+                &Change::Write(ref node) => self.store.insert(path.clone(), node.clone()),
+                &Change::Remove(_) => self.store.remove(path),
+            };
         }
+
+        let applied = changes.iter()
+            .map(|(path, change)| match change {
+                &Change::Write(ref node) => {
+                    AppliedChange::Write(path.clone(), node.permissions.clone())
+                }
+                &Change::Remove(_) => AppliedChange::Remove(path.clone()),
+            })
+            .collect::<Vec<AppliedChange>>();
+
 
         self.generation += Wrapping(1);
         Some(applied)
