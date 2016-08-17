@@ -131,10 +131,7 @@ impl AppliedChange {
 
 /// Insert manual entries into a Store
 fn manual_entry(store: &mut HashMap<Path, Node>, name: Path, child_list: Vec<Basename>) {
-    let mut children = HashSet::new();
-    for child in child_list {
-        children.insert(child);
-    }
+    let children = child_list.iter().cloned().collect::<HashSet<Basename>>();
 
     store.insert(name.clone(),
                  Node {
