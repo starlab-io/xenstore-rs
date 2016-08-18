@@ -19,10 +19,14 @@
 extern crate mio;
 extern crate rustc_serialize;
 
+use message::ingress;
 use self::mio::{TryRead, TryWrite};
 use self::mio::unix::{UnixListener, UnixStream};
 use self::mio::util::Slab;
+use std::cell::{RefCell, RefMut};
 use std::io;
+use store;
+use system::System;
 use wire;
 
 const SERVER: mio::Token = mio::Token(0);
@@ -31,23 +35,26 @@ pub struct Server {
     // main UNIX socket for the server
     sock: UnixListener,
     // listen of connections accepted by the server
-    conns: Slab<Connection>,
+    conns: Slab<RefCell<Connection>>,
+    // datastore system objects
+    system: RefCell<System>,
 }
 
 impl Server {
     /// Create new server listening on a socket
-    pub fn new(sock: UnixListener) -> Server {
+    pub fn new(sock: UnixListener, system: System) -> Server {
         // create a slab with a capacity of 1024. need to skip Token(0).
         let slab = Slab::new_starting_at(mio::Token(1), 1024);
 
         Server {
             sock: sock,
             conns: slab,
+            system: RefCell::new(system),
         }
     }
 
     /// Register the server instance with the event loop
-    pub fn register(&mut self, event_loop: &mut mio::EventLoop<Server>) -> io::Result<()> {
+    pub fn register(&self, event_loop: &mut mio::EventLoop<Server>) -> io::Result<()> {
 
         debug!("register server socket to event loop");
 
@@ -79,12 +86,13 @@ impl Server {
         };
 
         // create a new connect and attempt to add it to our connection list
-        let insert = self.conns.insert_with(|token| Connection::new(sock, token));
+        let insert = self.conns.insert_with(|token| RefCell::new(Connection::new(sock, token)));
 
         match insert {
             Some(token) => {
                 // successful insert so we must register
-                let conn = self.find_conn_by_token(token);
+                let conn_ = self.find_conn_by_token(token);
+                let mut conn = conn_.borrow_mut();
                 match conn.register(event_loop) {
                     Ok(_) => {}
                     Err(e) => {
@@ -103,13 +111,13 @@ impl Server {
     }
 
     /// Close the server
-    fn close(&mut self, event_loop: &mut mio::EventLoop<Server>) {
+    fn close(&self, event_loop: &mut mio::EventLoop<Server>) {
         event_loop.shutdown();
     }
 
     /// Find a connection in the slab based on a token
-    fn find_conn_by_token<'a>(&'a mut self, token: mio::Token) -> &'a mut Connection {
-        &mut self.conns[token]
+    fn find_conn_by_token(&self, token: mio::Token) -> &RefCell<Connection> {
+        &self.conns[token]
     }
 }
 
@@ -134,8 +142,9 @@ impl mio::Handler for Server {
             _ => {
                 // process the connection
                 let is_closed = {
-                    let ref mut conn = self.find_conn_by_token(token);
-                    conn.ready(event_loop, events);
+                    let ref conn_ = self.find_conn_by_token(token);
+                    let mut conn = conn_.borrow_mut();
+                    conn.ready(event_loop, events, self.system.borrow_mut());
                     conn.is_closed()
                 };
 
@@ -166,7 +175,10 @@ impl Connection {
         }
     }
 
-    fn ready(&mut self, event_loop: &mut mio::EventLoop<Server>, events: mio::EventSet) {
+    fn ready(&mut self,
+             event_loop: &mut mio::EventLoop<Server>,
+             events: mio::EventSet,
+             system: RefMut<System>) {
 
         debug!("CONN: {:?}. EVENTS: {:?} STATE: {:?}",
                self.token,
@@ -192,7 +204,7 @@ impl Connection {
                         "CONN: {:?} unexpected events: {:?}",
                         self.token,
                         events);
-                self.read()
+                self.read(system)
             }
             State::WriteHeader(..) |
             State::WriteBody(..) => {
@@ -221,7 +233,7 @@ impl Connection {
     }
 
     /// Register the connection for events from the event loop
-    fn register(&mut self, event_loop: &mut mio::EventLoop<Server>) -> io::Result<()> {
+    fn register(&self, event_loop: &mut mio::EventLoop<Server>) -> io::Result<()> {
 
         let event_set = match self.state {
             State::AwaitingHeader(..) => mio::EventSet::readable(),
@@ -243,7 +255,7 @@ impl Connection {
     }
 
     /// Reregister the connection for events from the event loop
-    fn reregister(&mut self, event_loop: &mut mio::EventLoop<Server>) -> io::Result<()> {
+    fn reregister(&self, event_loop: &mut mio::EventLoop<Server>) -> io::Result<()> {
 
         let event_set = match self.state {
             State::AwaitingHeader(..) => mio::EventSet::readable(),
@@ -271,7 +283,7 @@ impl Connection {
 
 
     /// Handle read events for the connection from the event loop
-    fn read(&mut self) -> io::Result<()> {
+    fn read(&mut self, system: RefMut<System>) -> io::Result<()> {
         let new_state = match self.state {
             State::AwaitingHeader(ref mut buf) => {
                 if let Some(header) = try!(Self::read_header(&mut self.sock, buf)) {
@@ -281,9 +293,13 @@ impl Connection {
                 }
             }
             State::AwaitingBody(ref header, ref mut buf) => {
-                try!(Self::read_body(&mut self.sock, header, buf)).map(|_| {
-                    let resp_body = wire::Body(vec![]);
-                    let resp_hdr = wire::Header { len: 0, ..header.clone() };
+                try!(Self::read_body(&mut self.sock, header, buf)).map(|body| {
+                    // when we successfully have a message body parse the entire thing
+                    // if we got a successful message back we need to actually process
+                    // encode the response for being transmitted
+                    let (resp_hdr, resp_body) = ingress::parse(store::DOM0_DOMAIN_ID, header, body)
+                        .process(&system)
+                        .encode();
                     State::transition_write_header(resp_hdr, resp_body)
                 })
             }

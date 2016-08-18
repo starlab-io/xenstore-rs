@@ -28,6 +28,10 @@ use mio::unix::UnixListener;
 use std::fs::{DirBuilder, remove_file};
 use std::path::PathBuf;
 use xenstore::server::*;
+use xenstore::store;
+use xenstore::system;
+use xenstore::transaction;
+use xenstore::watch;
 
 const UDS_PATH: &'static str = "/var/run/xenstored/socket";
 
@@ -73,7 +77,12 @@ fn main() {
         .ok()
         .expect("Failed to create event loop");
 
-    let mut server = Server::new(sock);
+    let store = store::Store::new();
+    let watches = watch::WatchList::new();
+    let transactions = transaction::TransactionList::new();
+    let system = system::System::new(store, watches, transactions);
+
+    let mut server = Server::new(sock, system);
 
     server.register(&mut event_loop)
         .ok()
