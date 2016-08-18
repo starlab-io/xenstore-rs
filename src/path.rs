@@ -25,6 +25,9 @@ use super::wire;
 pub struct Path(path::PathBuf);
 pub struct ParentIterator(Option<path::PathBuf>);
 
+const MAX_RELATIVE: usize = 2048;
+const MAX_ABSOLUTE: usize = 3072;
+
 impl Iterator for ParentIterator {
     type Item = Path;
 
@@ -64,11 +67,35 @@ pub fn get_domain_path(dom_id: wire::DomainId) -> Path {
 
 impl Path {
     pub fn try_from(dom_id: wire::DomainId, s: &str) -> Result<Path> {
+        if s == "" {
+            return Err(Error::EINVAL(format!("empty path is not allowed")));
+        }
+
+        if s.contains("//") {
+            return Err(Error::EINVAL(format!("doubled / is not allowed")));
+        }
+
+        if s != "/" && s.ends_with("/") {
+            return Err(Error::EINVAL(format!("trailing / is not allowed")));
+        }
+
         let input = path::PathBuf::from(s);
         let internal = {
             if input.is_absolute() {
+                if s.len() > MAX_ABSOLUTE {
+                    return Err(Error::EINVAL(format!("absolute path must be less than {} \
+                                                      characters",
+                                                     MAX_ABSOLUTE)));
+                }
+
                 input
             } else {
+                if s.len() > MAX_RELATIVE {
+                    return Err(Error::EINVAL(format!("relative path must be less than {} \
+                                                      characters",
+                                                     MAX_RELATIVE)));
+                }
+
                 let mut real = get_domain_path(dom_id);
                 real.0.push(input);
                 real.0
@@ -107,6 +134,66 @@ impl Path {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    #[should_panic]
+    fn empty_path() {
+        Path::try_from(0, "").unwrap();
+    }
+
+    #[test]
+    #[should_panic]
+    fn doubled_slash() {
+        Path::try_from(0, "/root//bar").unwrap();
+    }
+
+    #[test]
+    #[should_panic]
+    fn trailing_slash() {
+        Path::try_from(0, "/root/").unwrap();
+    }
+
+    #[test]
+    #[should_panic]
+    fn long_relative() {
+        let mut s = String::new();
+        for _ in 0..(super::MAX_RELATIVE + 1) {
+            s.push('a');
+        }
+
+        Path::try_from(1, &s).unwrap();
+    }
+
+    #[test]
+    fn max_relative() {
+        let mut s = String::new();
+        for _ in 0..super::MAX_RELATIVE {
+            s.push('a');
+        }
+
+        Path::try_from(1, &s).unwrap();
+    }
+
+    #[test]
+    #[should_panic]
+    fn long_absolute() {
+        let mut s = String::from("/");
+        for _ in 1..(super::MAX_ABSOLUTE + 1) {
+            s.push('a');
+        }
+
+        Path::try_from(1, &s).unwrap();
+    }
+
+    #[test]
+    fn max_absolute() {
+        let mut s = String::from("/");
+        for _ in 1..super::MAX_ABSOLUTE {
+            s.push('a');
+        }
+
+        Path::try_from(1, &s).unwrap();
+    }
 
     #[test]
     fn is_child() {
