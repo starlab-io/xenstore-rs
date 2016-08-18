@@ -252,7 +252,7 @@ mod test {
 
     #[test]
     fn transaction_changeset_can_be_stored() {
-        let path = Path::from(DOM0_DOMAIN_ID, "/basic/path");
+        let path = Path::try_from(DOM0_DOMAIN_ID, "/basic/path").unwrap();
         let value = Value::from("value");
 
         let store = Store::new();
@@ -283,7 +283,7 @@ mod test {
 
     #[test]
     fn transaction_ends_with_success() {
-        let path = Path::from(DOM0_DOMAIN_ID, "/basic/path");
+        let path = Path::try_from(DOM0_DOMAIN_ID, "/basic/path").unwrap();
         let value = Value::from("value");
 
         let mut store = Store::new();
@@ -318,7 +318,7 @@ mod test {
 
     #[test]
     fn transaction_ends_with_failure() {
-        let path = Path::from(DOM0_DOMAIN_ID, "/basic/path");
+        let path = Path::try_from(DOM0_DOMAIN_ID, "/basic/path").unwrap();
         let value = Value::from("value");
 
         let mut store = Store::new();
@@ -356,7 +356,7 @@ mod test {
 
     #[test]
     fn transaction_ends_with_success_colliding() {
-        let path = Path::from(DOM0_DOMAIN_ID, "/basic/path");
+        let path = Path::try_from(DOM0_DOMAIN_ID, "/basic/path").unwrap();
         let value_external = Value::from("value external");
         let value = Value::from("value");
 
@@ -411,7 +411,7 @@ mod test {
 
     #[test]
     fn transaction_must_match_dom_id() {
-        let path = Path::from(DOM0_DOMAIN_ID, "/basic/path");
+        let path = Path::try_from(DOM0_DOMAIN_ID, "/basic/path").unwrap();
         let value = Value::from("value");
 
         let mut store = Store::new();

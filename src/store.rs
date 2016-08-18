@@ -150,13 +150,13 @@ impl Store {
         let mut store = HashMap::new();
 
         manual_entry(&mut store,
-                     Path::from(DOM0_DOMAIN_ID, "/"),
+                     Path::try_from(DOM0_DOMAIN_ID, "/").unwrap(),
                      vec![Basename::from("tool")]);
         manual_entry(&mut store,
-                     Path::from(DOM0_DOMAIN_ID, "/tool"),
+                     Path::try_from(DOM0_DOMAIN_ID, "/tool").unwrap(),
                      vec![Basename::from("xenstored")]);
         manual_entry(&mut store,
-                     Path::from(DOM0_DOMAIN_ID, "/tool/xenstored"),
+                     Path::try_from(DOM0_DOMAIN_ID, "/tool/xenstored").unwrap(),
                      vec![]);
         Store {
             generation: Wrapping(0),
@@ -397,7 +397,7 @@ impl Store {
               dom_id: wire::DomainId,
               path: &Path)
               -> Result<ChangeSet> {
-        if path == &Path::from(DOM0_DOMAIN_ID, "/") {
+        if path == &Path::try_from(DOM0_DOMAIN_ID, "/").unwrap() {
             return Err(Error::EINVAL(format!("cannot remove root directory")));
         }
 
@@ -483,7 +483,7 @@ mod test {
     #[test]
     fn basic_write() {
         let store = Store::new();
-        let path = Path::from(DOM0_DOMAIN_ID, "/basic");
+        let path = Path::try_from(DOM0_DOMAIN_ID, "/basic").unwrap();
         let value = Value::from("value");
 
         let changes = store.write(&ChangeSet::new(&store),
@@ -503,7 +503,7 @@ mod test {
     #[test]
     fn basic_read() {
         let store = Store::new();
-        let path = Path::from(DOM0_DOMAIN_ID, "/basic");
+        let path = Path::try_from(DOM0_DOMAIN_ID, "/basic").unwrap();
         let value = Value::from("value");
 
         let changes = store.write(&ChangeSet::new(&store),
@@ -521,7 +521,7 @@ mod test {
     #[test]
     fn basic_applied_write_and_read() {
         let mut store = Store::new();
-        let path = Path::from(DOM0_DOMAIN_ID, "/basic");
+        let path = Path::try_from(DOM0_DOMAIN_ID, "/basic").unwrap();
         let value = Value::from("value");
 
         let changes = store.write(&ChangeSet::new(&store),
@@ -543,7 +543,7 @@ mod test {
     #[test]
     fn recursive_write() {
         let store = Store::new();
-        let path = Path::from(DOM0_DOMAIN_ID, "/basic/path");
+        let path = Path::try_from(DOM0_DOMAIN_ID, "/basic/path").unwrap();
         let parent = path.parent().unwrap();
         let value = Value::from("value");
 
@@ -567,7 +567,7 @@ mod test {
     #[test]
     fn basic_mkdir() {
         let store = Store::new();
-        let path = Path::from(DOM0_DOMAIN_ID, "/basic");
+        let path = Path::try_from(DOM0_DOMAIN_ID, "/basic").unwrap();
 
         let changes = store.mkdir(&ChangeSet::new(&store), DOM0_DOMAIN_ID, path.clone())
             .unwrap();
@@ -581,7 +581,7 @@ mod test {
     #[test]
     fn recursive_mkdir() {
         let store = Store::new();
-        let path = Path::from(DOM0_DOMAIN_ID, "/basic/path");
+        let path = Path::try_from(DOM0_DOMAIN_ID, "/basic/path").unwrap();
         let parent = path.parent().unwrap();
 
         let changes = store.mkdir(&ChangeSet::new(&store), DOM0_DOMAIN_ID, path.clone())
@@ -601,8 +601,8 @@ mod test {
     #[test]
     fn basic_directory() {
         let store = Store::new();
-        let path1 = Path::from(DOM0_DOMAIN_ID, "/basic/path1");
-        let path2 = Path::from(DOM0_DOMAIN_ID, "/basic/path2");
+        let path1 = Path::try_from(DOM0_DOMAIN_ID, "/basic/path1").unwrap();
+        let path2 = Path::try_from(DOM0_DOMAIN_ID, "/basic/path2").unwrap();
         let parent = path1.parent().unwrap();
 
         let mut changes = store.mkdir(&ChangeSet::new(&store), DOM0_DOMAIN_ID, path1.clone())
@@ -621,8 +621,8 @@ mod test {
     fn rm_deletes_all_directories() {
         let store = Store::new();
 
-        let path1 = Path::from(DOM0_DOMAIN_ID, "/basic/path1");
-        let path2 = Path::from(DOM0_DOMAIN_ID, "/basic/path2");
+        let path1 = Path::try_from(DOM0_DOMAIN_ID, "/basic/path1").unwrap();
+        let path2 = Path::try_from(DOM0_DOMAIN_ID, "/basic/path2").unwrap();
         let basic = path1.parent()
             .unwrap();
         let mut changes = store.mkdir(&ChangeSet::new(&store), DOM0_DOMAIN_ID, path1.clone())
@@ -655,7 +655,9 @@ mod test {
         }
 
         // verify the root still exists
-        let read = store.read(&changes, DOM0_DOMAIN_ID, &Path::from(DOM0_DOMAIN_ID, "/"))
+        let read = store.read(&changes,
+                  DOM0_DOMAIN_ID,
+                  &Path::try_from(DOM0_DOMAIN_ID, "/").unwrap())
             .unwrap();
         assert_eq!(read, "");
     }
@@ -664,12 +666,14 @@ mod test {
     fn rm_cannot_delete_root() {
         let store = Store::new();
 
-        let path1 = Path::from(DOM0_DOMAIN_ID, "/basic/path1");
+        let path1 = Path::try_from(DOM0_DOMAIN_ID, "/basic/path1").unwrap();
 
         let changes = store.mkdir(&ChangeSet::new(&store), DOM0_DOMAIN_ID, path1.clone())
             .unwrap();
 
-        let rslt = store.rm(&changes, DOM0_DOMAIN_ID, &Path::from(DOM0_DOMAIN_ID, "/"));
+        let rslt = store.rm(&changes,
+                            DOM0_DOMAIN_ID,
+                            &Path::try_from(DOM0_DOMAIN_ID, "/").unwrap());
 
         match rslt {
             Ok(_) => assert!(false, "removed the root directory"),
@@ -683,8 +687,8 @@ mod test {
         let store = Store::new();
 
         // Create the global state
-        let path1 = Path::from(DOM0_DOMAIN_ID, "/basic/path1");
-        let path2 = Path::from(DOM0_DOMAIN_ID, "/basic/path2");
+        let path1 = Path::try_from(DOM0_DOMAIN_ID, "/basic/path1").unwrap();
+        let path2 = Path::try_from(DOM0_DOMAIN_ID, "/basic/path2").unwrap();
         let basic = path1.parent()
             .unwrap();
 
@@ -712,7 +716,7 @@ mod test {
         let store = Store::new();
         let permissions = store.get_perms(&ChangeSet::new(&store),
                        DOM0_DOMAIN_ID,
-                       &Path::from(DOM0_DOMAIN_ID, "/"))
+                       &Path::try_from(DOM0_DOMAIN_ID, "/").unwrap())
             .unwrap();
 
         assert_eq!(permissions,
@@ -728,19 +732,19 @@ mod test {
 
         let mut changes = store.mkdir(&ChangeSet::new(&store),
                    DOM0_DOMAIN_ID,
-                   Path::from(DOM0_DOMAIN_ID, "/local/domain/1"))
+                   Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap())
             .unwrap();
 
         changes = store.set_perms(&changes,
                        DOM0_DOMAIN_ID,
-                       &Path::from(DOM0_DOMAIN_ID, "/local/domain/1"),
+                       &Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap(),
                        vec![Permission {
                                 id: 1,
                                 perm: PERM_NONE,
                             }])
             .unwrap();
 
-        let path = Path::from(1, "foo");
+        let path = Path::try_from(1, "foo").unwrap();
         let value = Value::from("value");
         store.write(&changes, 1, path.clone(), value.clone())
             .unwrap();
@@ -749,7 +753,7 @@ mod test {
     #[test]
     fn permissions_idempotent() {
         let store = Store::new();
-        let path = Path::from(DOM0_DOMAIN_ID, "/local/domain/1");
+        let path = Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap();
 
         let mut changes = store.mkdir(&ChangeSet::new(&store), DOM0_DOMAIN_ID, path.clone())
             .unwrap();
@@ -777,7 +781,7 @@ mod test {
     #[test]
     fn permissions_inherit() {
         let store = Store::new();
-        let path = Path::from(DOM0_DOMAIN_ID, "/local/domain/1");
+        let path = Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap();
 
         let mut changes = store.mkdir(&ChangeSet::new(&store), DOM0_DOMAIN_ID, path.clone())
             .unwrap();
@@ -809,7 +813,7 @@ mod test {
     #[test]
     fn permissions_inherit_no_overwrite_owner() {
         let store = Store::new();
-        let path = Path::from(DOM0_DOMAIN_ID, "/local/domain/1");
+        let path = Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap();
 
         let mut changes = store.mkdir(&ChangeSet::new(&store), DOM0_DOMAIN_ID, path.clone())
             .unwrap();
@@ -844,19 +848,19 @@ mod test {
 
         let mut changes = store.mkdir(&ChangeSet::new(&store),
                    DOM0_DOMAIN_ID,
-                   Path::from(DOM0_DOMAIN_ID, "/local/domain/1"))
+                   Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap())
             .unwrap();
 
         changes = store.set_perms(&changes,
                        DOM0_DOMAIN_ID,
-                       &Path::from(DOM0_DOMAIN_ID, "/local/domain/1"),
+                       &Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap(),
                        vec![Permission {
                                 id: 1,
                                 perm: PERM_NONE,
                             }])
             .unwrap();
 
-        let path = Path::from(1, "foo");
+        let path = Path::try_from(1, "foo").unwrap();
         let value = Value::from("value");
         changes = store.write(&changes, 1, path.clone(), value.clone())
             .unwrap();
@@ -880,19 +884,19 @@ mod test {
 
         let mut changes = store.mkdir(&ChangeSet::new(&store),
                    DOM0_DOMAIN_ID,
-                   Path::from(DOM0_DOMAIN_ID, "/local/domain/1"))
+                   Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap())
             .unwrap();
 
         changes = store.set_perms(&changes,
                        DOM0_DOMAIN_ID,
-                       &Path::from(DOM0_DOMAIN_ID, "/local/domain/1"),
+                       &Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap(),
                        vec![Permission {
                                 id: 1,
                                 perm: PERM_NONE,
                             }])
             .unwrap();
 
-        let path = Path::from(1, "foo");
+        let path = Path::try_from(1, "foo").unwrap();
         let value = Value::from("value");
         changes = store.write(&changes, 1, path.clone(), value.clone())
             .unwrap();
@@ -922,19 +926,19 @@ mod test {
 
         let mut changes = store.mkdir(&ChangeSet::new(&store),
                    DOM0_DOMAIN_ID,
-                   Path::from(DOM0_DOMAIN_ID, "/local/domain/1"))
+                   Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap())
             .unwrap();
 
         changes = store.set_perms(&changes,
                        DOM0_DOMAIN_ID,
-                       &Path::from(DOM0_DOMAIN_ID, "/local/domain/1"),
+                       &Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap(),
                        vec![Permission {
                                 id: 1,
                                 perm: PERM_NONE,
                             }])
             .unwrap();
 
-        let path = Path::from(1, "foo");
+        let path = Path::try_from(1, "foo").unwrap();
         let value = Value::from("value");
         changes = store.write(&changes, 1, path.clone(), value.clone())
             .unwrap();
@@ -954,7 +958,7 @@ mod test {
     #[test]
     fn block_cross_domain_directory() {
         let store = Store::new();
-        let domain = Path::from(DOM0_DOMAIN_ID, "/local/domain/1");
+        let domain = Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap();
 
         let mut changes = store.mkdir(&ChangeSet::new(&store), DOM0_DOMAIN_ID, domain.clone())
             .unwrap();
@@ -968,7 +972,7 @@ mod test {
                             }])
             .unwrap();
 
-        let path = Path::from(1, "foo");
+        let path = Path::try_from(1, "foo").unwrap();
         let value = Value::from("value");
         changes = store.write(&changes, 1, path.clone(), value.clone())
             .unwrap();

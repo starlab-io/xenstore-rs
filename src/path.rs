@@ -18,6 +18,7 @@
 
 use std::iter::{IntoIterator, Iterator};
 use std::path;
+use super::error::{Error, Result};
 use super::wire;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -62,7 +63,7 @@ pub fn get_domain_path(dom_id: wire::DomainId) -> Path {
 }
 
 impl Path {
-    pub fn from(dom_id: wire::DomainId, s: &str) -> Path {
+    pub fn try_from(dom_id: wire::DomainId, s: &str) -> Result<Path> {
         let input = path::PathBuf::from(s);
         let internal = {
             if input.is_absolute() {
@@ -74,7 +75,7 @@ impl Path {
             }
         };
 
-        Path(internal)
+        Ok(Path(internal))
     }
 
     pub fn basename(self: &Path) -> Option<String> {
@@ -109,8 +110,8 @@ mod test {
 
     #[test]
     fn is_child() {
-        let root = Path::from(0, "/");
-        let child = Path::from(0, "/root/filesystem/test");
+        let root = Path::try_from(0, "/").unwrap();
+        let child = Path::try_from(0, "/root/filesystem/test").unwrap();
         let parent = child.parent().unwrap();
         let grandparent = parent.parent().unwrap();
 
@@ -123,13 +124,15 @@ mod test {
 
     #[test]
     fn iterator() {
-        let path = Path::from(0, "/root/filesystem/test");
+        let path = Path::try_from(0, "/root/filesystem/test").unwrap();
         let mut iter = path.into_iter();
 
-        assert_eq!(iter.next(), Some(Path::from(0, "/root/filesystem/test")));
-        assert_eq!(iter.next(), Some(Path::from(0, "/root/filesystem")));
-        assert_eq!(iter.next(), Some(Path::from(0, "/root")));
-        assert_eq!(iter.next(), Some(Path::from(0, "/")));
+        assert_eq!(iter.next(),
+                   Some(Path::try_from(0, "/root/filesystem/test").unwrap()));
+        assert_eq!(iter.next(),
+                   Some(Path::try_from(0, "/root/filesystem").unwrap()));
+        assert_eq!(iter.next(), Some(Path::try_from(0, "/root").unwrap()));
+        assert_eq!(iter.next(), Some(Path::try_from(0, "/").unwrap()));
         assert_eq!(iter.next().is_none(), true);
     }
 }

@@ -30,11 +30,11 @@ pub enum WPath {
 }
 
 impl WPath {
-    pub fn from(dom_id: wire::DomainId, s: &str) -> WPath {
+    pub fn try_from(dom_id: wire::DomainId, s: &str) -> Result<WPath> {
         match s {
-            "@introduceDomain" => WPath::IntroduceDomain,
-            "@releaseDomain" => WPath::ReleaseDomain,
-            _ => WPath::Normal(Path::from(dom_id, s)),
+            "@introduceDomain" => Ok(WPath::IntroduceDomain),
+            "@releaseDomain" => Ok(WPath::ReleaseDomain),
+            _ => Path::try_from(dom_id, s).map(WPath::Normal),
         }
     }
 }
@@ -133,7 +133,7 @@ mod test {
     fn basic_watch() {
         let mut watch_list = WatchList::new();
         let mut store = Store::new();
-        let path = Path::from(DOM0_DOMAIN_ID, "/root/file/path");
+        let path = Path::try_from(DOM0_DOMAIN_ID, "/root/file/path").unwrap();
         let value = Value::from("value");
 
         watch_list.watch(DOM0_DOMAIN_ID, WPath::Normal(path.clone())).unwrap();
@@ -159,7 +159,7 @@ mod test {
     fn basic_watch_no_permission() {
         let mut watch_list = WatchList::new();
         let mut store = Store::new();
-        let path = Path::from(DOM0_DOMAIN_ID, "/root/file/path");
+        let path = Path::try_from(DOM0_DOMAIN_ID, "/root/file/path").unwrap();
         let value = Value::from("value");
 
         watch_list.watch(DOM0_DOMAIN_ID, WPath::Normal(path.clone())).unwrap();
@@ -186,7 +186,7 @@ mod test {
     fn basic_watch_with_permission() {
         let mut watch_list = WatchList::new();
         let mut store = Store::new();
-        let path = Path::from(DOM0_DOMAIN_ID, "/root/file/path");
+        let path = Path::try_from(DOM0_DOMAIN_ID, "/root/file/path").unwrap();
         let value = Value::from("value");
 
         watch_list.watch(DOM0_DOMAIN_ID, WPath::Normal(path.clone())).unwrap();
@@ -221,7 +221,7 @@ mod test {
     fn basic_watch_parent() {
         let mut watch_list = WatchList::new();
         let mut store = Store::new();
-        let path = Path::from(DOM0_DOMAIN_ID, "/root/file/path");
+        let path = Path::try_from(DOM0_DOMAIN_ID, "/root/file/path").unwrap();
         let value = Value::from("value");
 
         watch_list.watch(DOM0_DOMAIN_ID, WPath::Normal(path.parent().unwrap())).unwrap();
@@ -258,7 +258,7 @@ mod test {
     fn basic_watch_remove() {
         let mut watch_list = WatchList::new();
         let mut store = Store::new();
-        let path = Path::from(DOM0_DOMAIN_ID, "/root/file/path");
+        let path = Path::try_from(DOM0_DOMAIN_ID, "/root/file/path").unwrap();
         let value = Value::from("value");
 
         watch_list.watch(DOM0_DOMAIN_ID, WPath::Normal(path.parent().unwrap())).unwrap();
