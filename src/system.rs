@@ -136,7 +136,7 @@ mod test {
 
     #[test]
     fn test_do_full_test() {
-        let path = path::Path::from(store::DOM0_DOMAIN_ID, "/root/file/path");
+        let path = path::Path::try_from(store::DOM0_DOMAIN_ID, "/root/file/path").unwrap();
         let value = store::Value::from("value");
 
         // set up a watch
