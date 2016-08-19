@@ -70,7 +70,7 @@ egress_no_arg!(ResetWatches, wire::XS_RESET_WATCHES);
 
 pub struct Directory {
     pub md: Metadata,
-    pub paths: Vec<path::Path>,
+    pub paths: Vec<store::Basename>,
 }
 
 impl Egress for Directory {

@@ -40,21 +40,37 @@ pub trait ProcessMessage {
 
 /// process an incoming directory request
 impl ProcessMessage for ingress::Directory {
-    fn process(&self, _: &RefMut<system::System>) -> Box<egress::Egress> {
-        Box::new(egress::Directory {
-            md: self.md,
-            paths: vec![],
-        })
+    fn process(&self, sys: &RefMut<system::System>) -> Box<egress::Egress> {
+        sys.do_store(self.md.dom_id,
+                      self.md.tx_id,
+                      |store, changes| store.directory(changes, self.md.dom_id, &self.path))
+            .map(|entries| {
+                Box::new(egress::Directory {
+                    md: self.md,
+                    paths: entries,
+                }) as Box<egress::Egress>
+            })
+            .unwrap_or_else(|e| {
+                Box::new(egress::ErrorMsg::from(self.md, &e)) as Box<egress::Egress>
+            })
     }
 }
 
 /// process an incoming read request
 impl ProcessMessage for ingress::Read {
-    fn process(&self, _: &RefMut<system::System>) -> Box<egress::Egress> {
-        Box::new(egress::Read {
-            md: self.md,
-            value: String::from(""),
-        })
+    fn process(&self, sys: &RefMut<system::System>) -> Box<egress::Egress> {
+        sys.do_store(self.md.dom_id,
+                      self.md.tx_id,
+                      |store, changes| store.read(changes, self.md.dom_id, &self.path))
+            .map(|value| {
+                Box::new(egress::Read {
+                    md: self.md,
+                    value: value,
+                }) as Box<egress::Egress>
+            })
+            .unwrap_or_else(|e| {
+                Box::new(egress::ErrorMsg::from(self.md, &e)) as Box<egress::Egress>
+            })
     }
 }
 
