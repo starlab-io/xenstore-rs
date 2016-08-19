@@ -85,6 +85,8 @@ pub type DomainId = u32;
 
 /// A `Header` is always 16 bytes long
 pub const HEADER_SIZE: usize = 16;
+/// A `Body` is at most 4k
+pub const BODY_SIZE: usize = 4096;
 
 /// The `Header` type that is generic to all messages
 #[derive(Clone, Debug, PartialEq)]
@@ -167,6 +169,21 @@ impl Body {
             .collect();
 
         Some(Body(res))
+    }
+
+    /// Output the body as a vector of bytes
+    pub fn to_vec(&mut self) -> Vec<u8> {
+        let mut ret = Vec::<u8>::with_capacity(BODY_SIZE);
+
+        // every field is separated by a NULL byte
+        for field in &self.0 {
+            if !field.is_empty() {
+                ret.extend_from_slice(&field);
+                ret.push(b'\0');
+            }
+        }
+
+        ret
     }
 }
 
