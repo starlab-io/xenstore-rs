@@ -135,7 +135,7 @@ impl ProcessMessage for ingress::GetDomainPath {
     fn process(&self, _: &RefMut<system::System>) -> Box<egress::Egress> {
         Box::new(egress::GetDomainPath {
             md: self.md,
-            path: path::Path::try_from(0 as wire::DomainId, "/").unwrap(),
+            path: path::get_domain_path(self.md.dom_id),
         })
     }
 }
