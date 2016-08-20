@@ -185,6 +185,16 @@ impl Body {
 
         ret
     }
+
+    /// Provide the length of the body in bytes
+    pub fn len(&self) -> usize {
+        // walk over all items in the body and add 1 for the separator
+        self.0
+            .iter()
+            .filter(|i| !i.is_empty())
+            .map(|i| i.iter().count() + 1)
+            .fold(0, |acc, x| acc + x)
+    }
 }
 
 #[cfg(test)]
@@ -282,4 +292,44 @@ mod tests {
         quickcheck(prop as fn(BodyBytes) -> bool);
     }
 
+    #[test]
+    fn body_len() {
+
+        impl Arbitrary for Body {
+            fn arbitrary<G: Gen>(g: &mut G) -> Body {
+                let fields = g.gen_range(0, 128);
+                let size = g.gen_range(0, 32);
+                let mut vec = Vec::<Vec<u8>>::with_capacity(fields);
+                for _ in 0..fields {
+                    // 128 fields of 0 to 32 bytes each
+                    // keeps it below 4096
+                    let mut field = Vec::<u8>::with_capacity(size);
+                    g.fill_bytes(&mut field);
+                    vec.push(field);
+                }
+
+                Body(vec)
+            }
+        }
+
+        fn prop(body: Body) -> bool {
+            // get the reported length
+            let length = body.len();
+
+            // get the byte vector
+            let bytes = body.0;
+
+            let mut total = 0;
+            for field in bytes {
+                // size of the field plus the NULL sep
+                if !field.is_empty() {
+                    total += field.len() + 1
+                }
+            }
+
+            length == total
+        }
+
+        quickcheck(prop as fn(Body) -> bool);
+    }
 }
