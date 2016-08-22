@@ -81,6 +81,26 @@ impl Egress for Directory {
     fn md(&self) -> &Metadata {
         &self.md
     }
+
+    fn encode(&self) -> (wire::Header, wire::Body) {
+        // a build a vector of vectors of u8
+        let body = self.paths
+            .iter()
+            .map(|p| p.as_bytes().to_owned())
+            .collect();
+
+        // covert to wire::Body
+        let body = wire::Body(body);
+
+        let header = wire::Header {
+            msg_type: self.msg_type(),
+            req_id: self.md().req_id,
+            tx_id: self.md().tx_id,
+            len: body.len() as u32,
+        };
+
+        (header, body)
+    }
 }
 
 pub struct Read {
