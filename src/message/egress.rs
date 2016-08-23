@@ -116,6 +116,23 @@ impl Egress for Read {
     fn md(&self) -> &Metadata {
         &self.md
     }
+
+    fn encode(&self) -> (wire::Header, wire::Body) {
+        // a build a vector of u8s
+        let value = self.value.as_bytes().to_owned();
+
+        // convert to wire::Body
+        let body = wire::Body(vec![value]);
+
+        let header = wire::Header {
+            msg_type: self.msg_type(),
+            req_id: self.md().req_id,
+            tx_id: self.md().tx_id,
+            len: body.len() as u32,
+        };
+
+        (header, body)
+    }
 }
 
 pub struct GetPerms {
