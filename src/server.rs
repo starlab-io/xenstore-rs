@@ -194,7 +194,8 @@ impl Connection {
                         events);
                 self.read()
             }
-            State::Write(..) => {
+            State::WriteHeader(..) |
+            State::WriteBody(..) => {
                 assert!(events.is_writable(),
                         "CONN: {:?} unexpected events: {:?}",
                         self.token,
@@ -247,7 +248,8 @@ impl Connection {
         let event_set = match self.state {
             State::AwaitingHeader(..) => mio::EventSet::readable(),
             State::AwaitingBody(..) => mio::EventSet::readable(),
-            State::Write(..) => mio::EventSet::writable(),
+            State::WriteHeader(..) => mio::EventSet::writable(),
+            State::WriteBody(..) => mio::EventSet::writable(),
             State::Closed => {
                 return event_loop.deregister(&self.sock);
             }
@@ -278,11 +280,11 @@ impl Connection {
                     None
                 }
             }
-            State::AwaitingBody(ref h, ref mut buf) => {
-                try!(Self::read_body(&mut self.sock, h, buf)).map(|_| {
-                    let resp = vec![];
-                    let resp_hdr = wire::Header { len: 0, ..h.clone() };
-                    State::transition_write_msg(resp_hdr, resp)
+            State::AwaitingBody(ref header, ref mut buf) => {
+                try!(Self::read_body(&mut self.sock, header, buf)).map(|_| {
+                    let resp_body = wire::Body(vec![]);
+                    let resp_hdr = wire::Header { len: 0, ..header.clone() };
+                    State::transition_write_header(resp_hdr, resp_body)
                 })
             }
             _ => unreachable!(),
@@ -326,8 +328,14 @@ impl Connection {
     /// Handle write events for the connection from the event loop
     fn write(&mut self) -> io::Result<()> {
         let new_state = match self.state {
-            State::Write(ref header, ref body) => {
-                match try!(Self::write_msg(&mut self.sock, header, body)) {
+            State::WriteHeader(ref mut header, ref mut body) => {
+                match try!(Self::write_bytes(&mut self.sock, header)) {
+                    Some(_) => Some(State::transition_write_body(body)),
+                    None => None,
+                }
+            }
+            State::WriteBody(ref mut body) => {
+                match try!(Self::write_bytes(&mut self.sock, body)) {
                     Some(_) => Some(State::transition_awaiting_header()),
                     None => None,
                 }
@@ -335,31 +343,26 @@ impl Connection {
             _ => unreachable!(),
         };
 
-        debug!("CONN: {:?} STATE CHANGE: {:?}", self.token, new_state);
-
         // if the state was updated then save it
         if let Some(new_state) = new_state {
+            debug!("CONN: {:?} STATE CHANGE: {:?}", self.token, new_state);
             self.state = new_state;
         }
 
         Ok(())
     }
 
-    /// Write a response back to the client
-    fn write_msg<W: io::Write>(output: &mut W,
-                               header: &wire::Header,
-                               _: &io::Cursor<Vec<u8>>)
-                               -> io::Result<Option<()>> {
-        // convert header to a vector of bytes
-        let mut hdr = header.to_vec();
-
+    /// Write a bag of bytes back to the client
+    fn write_bytes<W: io::Write>(output: &mut W,
+                                 bytes: &mut io::Cursor<Vec<u8>>)
+                                 -> io::Result<Option<()>> {
         // write out the header
-        let res = try!(output.try_write(&mut hdr));
+        let res = try!(output.try_write_buf(bytes));
 
         // check that everything was sent
         if let Some(n) = res {
             // if we sent everything then its a success
-            if n == hdr.len() {
+            if n == bytes.position() as usize {
                 return Ok(Some(()));
             }
         }
@@ -387,8 +390,10 @@ enum State {
     AwaitingHeader(Vec<u8>),
     // read the body into the buffer
     AwaitingBody(wire::Header, Vec<u8>),
-    // write the message out
-    Write(wire::Header, io::Cursor<Vec<u8>>),
+    // write the response header out
+    WriteHeader(io::Cursor<Vec<u8>>, wire::Body),
+    // write the response body out
+    WriteBody(io::Cursor<Vec<u8>>),
     // closed and time to clean up
     Closed,
 }
@@ -403,7 +408,11 @@ impl State {
         State::AwaitingBody(header, Vec::<u8>::with_capacity(len))
     }
 
-    fn transition_write_msg(header: wire::Header, msg: Vec<u8>) -> State {
-        State::Write(header, io::Cursor::new(msg))
+    fn transition_write_header(header: wire::Header, body: wire::Body) -> State {
+        State::WriteHeader(io::Cursor::new(header.to_vec()), body)
+    }
+
+    fn transition_write_body(body: &mut wire::Body) -> State {
+        State::WriteBody(io::Cursor::new(body.to_vec()))
     }
 }
