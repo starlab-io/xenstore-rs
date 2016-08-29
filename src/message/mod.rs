@@ -35,12 +35,12 @@ pub mod egress;
 pub mod ingress;
 
 pub trait ProcessMessage {
-    fn process(&self, &RefMut<system::System>) -> Box<egress::Egress>;
+    fn process(&self, RefMut<system::System>) -> Box<egress::Egress>;
 }
 
 /// process an incoming directory request
 impl ProcessMessage for ingress::Directory {
-    fn process(&self, sys: &RefMut<system::System>) -> Box<egress::Egress> {
+    fn process(&self, sys: RefMut<system::System>) -> Box<egress::Egress> {
         sys.do_store(self.md.dom_id,
                       self.md.tx_id,
                       |store, changes| store.directory(changes, self.md.dom_id, &self.path))
@@ -58,7 +58,7 @@ impl ProcessMessage for ingress::Directory {
 
 /// process an incoming read request
 impl ProcessMessage for ingress::Read {
-    fn process(&self, sys: &RefMut<system::System>) -> Box<egress::Egress> {
+    fn process(&self, sys: RefMut<system::System>) -> Box<egress::Egress> {
         sys.do_store(self.md.dom_id,
                       self.md.tx_id,
                       |store, changes| store.read(changes, self.md.dom_id, &self.path))
@@ -76,7 +76,7 @@ impl ProcessMessage for ingress::Read {
 
 /// process an incoming get permissions request
 impl ProcessMessage for ingress::GetPerms {
-    fn process(&self, _: &RefMut<system::System>) -> Box<egress::Egress> {
+    fn process(&self, _: RefMut<system::System>) -> Box<egress::Egress> {
         Box::new(egress::GetPerms {
             md: self.md,
             perms: vec![],
@@ -86,35 +86,49 @@ impl ProcessMessage for ingress::GetPerms {
 
 /// process an incoming make directory request
 impl ProcessMessage for ingress::Mkdir {
-    fn process(&self, _: &RefMut<system::System>) -> Box<egress::Egress> {
-        Box::new(egress::Mkdir { md: self.md })
+    fn process(&self, sys: RefMut<system::System>) -> Box<egress::Egress> {
+        let mut sys = sys;
+        sys.do_store_mut(self.md.dom_id,
+                          self.md.tx_id,
+                          |store, changes| store.mkdir(changes, self.md.dom_id, self.path.clone()))
+            .map(|_| Box::new(egress::Mkdir { md: self.md }) as Box<egress::Egress>)
+            .unwrap_or_else(|e| {
+                Box::new(egress::ErrorMsg::from(self.md, &e)) as Box<egress::Egress>
+            })
     }
 }
 
 /// process an incoming remove request
 impl ProcessMessage for ingress::Remove {
-    fn process(&self, _: &RefMut<system::System>) -> Box<egress::Egress> {
-        Box::new(egress::Remove { md: self.md })
+    fn process(&self, sys: RefMut<system::System>) -> Box<egress::Egress> {
+        let mut sys = sys;
+        sys.do_store_mut(self.md.dom_id,
+                          self.md.tx_id,
+                          |store, changes| store.rm(changes, self.md.dom_id, &self.path))
+            .map(|_| Box::new(egress::Remove { md: self.md }) as Box<egress::Egress>)
+            .unwrap_or_else(|e| {
+                Box::new(egress::ErrorMsg::from(self.md, &e)) as Box<egress::Egress>
+            })
     }
 }
 
 /// process an incoming watch request
 impl ProcessMessage for ingress::Watch {
-    fn process(&self, _: &RefMut<system::System>) -> Box<egress::Egress> {
+    fn process(&self, _: RefMut<system::System>) -> Box<egress::Egress> {
         Box::new(egress::Watch { md: self.md })
     }
 }
 
 /// process an incoming unwatch request
 impl ProcessMessage for ingress::Unwatch {
-    fn process(&self, _: &RefMut<system::System>) -> Box<egress::Egress> {
+    fn process(&self, _: RefMut<system::System>) -> Box<egress::Egress> {
         Box::new(egress::Unwatch { md: self.md })
     }
 }
 
 /// process an incoming transaction start request
 impl ProcessMessage for ingress::TransactionStart {
-    fn process(&self, _: &RefMut<system::System>) -> Box<egress::Egress> {
+    fn process(&self, _: RefMut<system::System>) -> Box<egress::Egress> {
         let tx_id = self.md.tx_id;
         Box::new(egress::TransactionStart {
             md: self.md,
@@ -125,14 +139,14 @@ impl ProcessMessage for ingress::TransactionStart {
 
 /// process an incoming release request
 impl ProcessMessage for ingress::Release {
-    fn process(&self, _: &RefMut<system::System>) -> Box<egress::Egress> {
+    fn process(&self, _: RefMut<system::System>) -> Box<egress::Egress> {
         Box::new(egress::Release { md: self.md })
     }
 }
 
 /// process an incoming get domain path request
 impl ProcessMessage for ingress::GetDomainPath {
-    fn process(&self, _: &RefMut<system::System>) -> Box<egress::Egress> {
+    fn process(&self, _: RefMut<system::System>) -> Box<egress::Egress> {
         Box::new(egress::GetDomainPath {
             md: self.md,
             path: path::get_domain_path(self.md.dom_id),
@@ -142,21 +156,21 @@ impl ProcessMessage for ingress::GetDomainPath {
 
 /// process an incoming resume request
 impl ProcessMessage for ingress::Resume {
-    fn process(&self, _: &RefMut<system::System>) -> Box<egress::Egress> {
+    fn process(&self, _: RefMut<system::System>) -> Box<egress::Egress> {
         Box::new(egress::Resume { md: self.md })
     }
 }
 
 /// process an incoming restrict request
 impl ProcessMessage for ingress::Restrict {
-    fn process(&self, _: &RefMut<system::System>) -> Box<egress::Egress> {
+    fn process(&self, _: RefMut<system::System>) -> Box<egress::Egress> {
         Box::new(egress::Restrict { md: self.md })
     }
 }
 
 /// process an error that occurred while parsing
 impl ProcessMessage for ingress::ErrorMsg {
-    fn process(&self, _: &RefMut<system::System>) -> Box<egress::Egress> {
+    fn process(&self, _: RefMut<system::System>) -> Box<egress::Egress> {
         Box::new(egress::ErrorMsg::from(self.md, &self.err))
     }
 }

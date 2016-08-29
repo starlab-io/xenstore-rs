@@ -298,7 +298,7 @@ impl Connection {
                     // if we got a successful message back we need to actually process
                     // encode the response for being transmitted
                     let (resp_hdr, resp_body) = ingress::parse(store::DOM0_DOMAIN_ID, header, body)
-                        .process(&system)
+                        .process(system)
                         .encode();
                     State::transition_write_header(resp_hdr, resp_body)
                 })
