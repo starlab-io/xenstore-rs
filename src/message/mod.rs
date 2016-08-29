@@ -174,3 +174,20 @@ impl ProcessMessage for ingress::ErrorMsg {
         Box::new(egress::ErrorMsg::from(self.md, &self.err))
     }
 }
+
+/// process an incoming write request
+impl ProcessMessage for ingress::Write {
+    fn process(&self, sys: RefMut<system::System>) -> Box<egress::Egress> {
+        let mut sys = sys;
+        sys.do_store_mut(self.md.dom_id, self.md.tx_id, |store, changes| {
+                store.write(changes,
+                            self.md.dom_id,
+                            self.path.clone(),
+                            self.rest[0].clone())
+            })
+            .map(|_| Box::new(egress::Write { md: self.md }) as Box<egress::Egress>)
+            .unwrap_or_else(|e| {
+                Box::new(egress::ErrorMsg::from(self.md, &e)) as Box<egress::Egress>
+            })
+    }
+}

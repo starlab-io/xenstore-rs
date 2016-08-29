@@ -25,6 +25,10 @@ pub trait IngressPath {
     fn new(Metadata, path::Path) -> Self;
 }
 
+pub trait IngressPathRest {
+    fn new(Metadata, path::Path, Vec<String>) -> Self;
+}
+
 pub trait IngressNoArg {
     fn new(Metadata) -> Self;
 }
@@ -41,6 +45,26 @@ macro_rules! ingress_path {
                 $id {
                     md: md,
                     path: path,
+                }
+            }
+        }
+    }
+}
+
+macro_rules! ingress_path_rest {
+    ($id:ident) => {
+        pub struct $id {
+            pub md: Metadata,
+            pub path: path::Path,
+            pub rest: Vec<String>,
+        }
+
+        impl IngressPathRest for $id {
+            fn new(md: Metadata, path: path::Path, rest: Vec<String>) -> $id {
+                $id {
+                    md: md,
+                    path: path,
+                    rest: rest,
                 }
             }
         }
@@ -69,6 +93,8 @@ ingress_path!(GetPerms);
 ingress_path!(Mkdir);
 ingress_path!(Remove);
 
+ingress_path_rest!(Write);
+
 ingress_no_arg!(Watch);
 ingress_no_arg!(Unwatch);
 ingress_no_arg!(TransactionStart);
@@ -92,22 +118,31 @@ pub struct ErrorMsg {
 //    Restrict(Metadata)
 //    ResetWatches(Metadata)
 
-fn to_path_str<'a>(body: &'a wire::Body) -> Result<&'a str> {
+fn to_strs<'a>(body: &'a wire::Body) -> Result<Vec<&'a str>> {
     // parse out the Vec<Vec<u8>>
     let wire::Body(ref body) = *body;
 
-    // this request must contain at most one path
-    if body.len() != 1 {
-        let thanks_cargo_fmt = format!("Invalid number of paths received. Expected 1. Got: {}",
-                                       body.len());
-        return Err(Error::EINVAL(thanks_cargo_fmt));
-    }
+    body.iter()
+        .map(|bytes| {
+            str::from_utf8(bytes).map_err(|_| Error::EINVAL(format!("bad supplied string")))
+        })
+        .collect()
+}
 
-    // convert the supplied path into a String which can fail
-    match str::from_utf8(&body[0]) {
-        Ok(s) => Ok(s),
-        Err(e) => Err(Error::EINVAL(format!("bad supplied path: {}", e))),
-    }
+fn to_path_str<'a>(body: &'a wire::Body) -> Result<&'a str> {
+    // parse out the Vec<&str>
+    let strs = to_strs(body);
+
+    strs.and_then(|strs| {
+        // this request must contain at most one path
+        if strs.len() != 1 {
+            let thanks_cargo_fmt = format!("Invalid number of paths received. Expected 1. Got: {}",
+                                           strs.len());
+            Err(Error::EINVAL(thanks_cargo_fmt))
+        } else {
+            Ok(strs[0])
+        }
+    })
 }
 
 fn parse_path_only<T: 'static + IngressPath + ProcessMessage>(md: Metadata,
@@ -117,6 +152,32 @@ fn parse_path_only<T: 'static + IngressPath + ProcessMessage>(md: Metadata,
     let path = try!(to_path_str(&body).and_then(|p| path::Path::try_from(dom_id, p)));
 
     Ok(Box::new(T::new(md, path)))
+}
+
+fn parse_path_rest<T: 'static + IngressPathRest + ProcessMessage>
+    (md: Metadata,
+     body: wire::Body)
+     -> Result<Box<ProcessMessage>> {
+    let dom_id = md.dom_id;
+
+    // parse out the Vec<&str>
+    let strs = try!(to_strs(&body));
+
+    // this request must contain a path and a value
+    if strs.len() < 2 {
+        let thanks_cargo_fmt = format!("Invalid number of strs received. Expected at least 2. \
+                                        Got: {}",
+                                       strs.len());
+        return Err(Error::EINVAL(thanks_cargo_fmt));
+    }
+
+    let path = try!(path::Path::try_from(dom_id, strs[0]));
+    let rest = strs[1..]
+        .iter()
+        .map(|v| v.to_string())
+        .collect();
+
+    Ok(Box::new(T::new(md, path, rest)))
 }
 
 fn parse_metadata_only<T: 'static + IngressNoArg + ProcessMessage>
@@ -139,6 +200,7 @@ pub fn parse(dom_id: wire::DomainId,
     let msg = match header.msg_type {
         wire::XS_DIRECTORY => parse_path_only::<Directory>(md, body),
         wire::XS_READ => parse_path_only::<Read>(md, body),
+        wire::XS_WRITE => parse_path_rest::<Write>(md, body),
         wire::XS_GET_PERMS => parse_path_only::<GetPerms>(md, body),
         wire::XS_MKDIR => parse_path_only::<Mkdir>(md, body),
         wire::XS_RM => parse_path_only::<Remove>(md, body),
