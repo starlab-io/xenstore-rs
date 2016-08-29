@@ -20,11 +20,13 @@ extern crate docopt;
 #[macro_use]
 extern crate log;
 extern crate mio;
+extern crate nix;
 extern crate rustc_serialize;
 extern crate stderrlog;
 extern crate xenstore;
 
 use mio::unix::UnixListener;
+use nix::sys::signal::{self, sigaction, SigAction, SigHandler, SaFlags, SigSet};
 use std::fs::{DirBuilder, remove_file};
 use std::path::PathBuf;
 use xenstore::server::*;
@@ -45,6 +47,14 @@ struct Args {
     flag_q: bool,
 }
 
+extern "C" fn cleanup_handler(_: nix::c_int) {
+    let uds_path = PathBuf::from(UDS_PATH);
+    remove_file(&uds_path)
+        .ok()
+        .expect("Failed to remove unix socket");
+    std::process::exit(0);
+}
+
 fn main() {
 
     let args: Args = docopt::Docopt::new(USAGE)
@@ -58,6 +68,19 @@ fn main() {
         .quiet(args.flag_q)
         .init()
         .unwrap();
+
+    let action = SigAction::new(SigHandler::Handler(cleanup_handler),
+                                SaFlags::empty(),
+                                SigSet::empty());
+
+    unsafe {
+        sigaction(signal::SIGINT, &action)
+            .ok()
+            .expect("Failed to register SIGINT handler");
+        sigaction(signal::SIGTERM, &action)
+            .ok()
+            .expect("Failed to register SIGTERM handler");
+    }
 
     // where our Unix Socket will live, we need to create the path to it
     let uds_path = PathBuf::from(UDS_PATH);
