@@ -29,6 +29,10 @@ pub trait IngressPathRest {
     fn new(Metadata, path::Path, Vec<String>) -> Self;
 }
 
+pub trait IngressBool {
+    fn new(Metadata, bool) -> Self;
+}
+
 pub trait IngressNoArg {
     fn new(Metadata) -> Self;
 }
@@ -71,6 +75,24 @@ macro_rules! ingress_path_rest {
     }
 }
 
+macro_rules! ingress_bool {
+    ($id:ident) => {
+        pub struct $id {
+            pub md: Metadata,
+            pub value: bool,
+        }
+
+        impl IngressBool for $id {
+            fn new(md: Metadata, value: bool) -> $id {
+                $id {
+                    md: md,
+                    value: value,
+                }
+            }
+        }
+    }
+}
+
 macro_rules! ingress_no_arg {
     ($id:ident) => {
         pub struct $id {
@@ -96,6 +118,8 @@ ingress_path!(Remove);
 ingress_path_rest!(Write);
 ingress_path_rest!(SetPerms);
 
+ingress_bool!(TransactionEnd);
+
 ingress_no_arg!(Watch);
 ingress_no_arg!(Unwatch);
 ingress_no_arg!(TransactionStart);
@@ -110,7 +134,6 @@ pub struct ErrorMsg {
 }
 
 //    Debug(Metadata, Vec<String>)
-//    TransactionEnd(Metadata, bool)
 //    Introduce(Metadata, Mfn, EvtChnPort)
 //    IsDomainIntroduced(Metadata)
 //    SetTarget(Metadata, wire::DomainId)
@@ -179,6 +202,25 @@ fn parse_path_rest<T: 'static + IngressPathRest + ProcessMessage>
     Ok(Box::new(T::new(md, path, rest)))
 }
 
+fn parse_path_bool<T: 'static + IngressBool + ProcessMessage>(md: Metadata,
+                                                              body: wire::Body)
+                                                              -> Result<Box<ProcessMessage>> {
+    // parse out the Vec<&str>
+    let strs = try!(to_strs(&body));
+
+    // this request must contain a path and a value
+    if strs.len() != 1 {
+        let thanks_cargo_fmt = format!("Invalid number of strs received. Expected 1. \
+                                        Got: {}",
+                                       strs.len());
+        return Err(Error::EINVAL(thanks_cargo_fmt));
+    }
+
+    let value = strs[0] == "T";
+
+    Ok(Box::new(T::new(md, value)))
+}
+
 fn parse_metadata_only<T: 'static + IngressNoArg + ProcessMessage>
     (md: Metadata)
      -> Result<Box<ProcessMessage>> {
@@ -207,6 +249,7 @@ pub fn parse(dom_id: wire::DomainId,
         wire::XS_WATCH => parse_metadata_only::<Watch>(md),
         wire::XS_UNWATCH => parse_metadata_only::<Unwatch>(md),
         wire::XS_TRANSACTION_START => parse_metadata_only::<TransactionStart>(md),
+        wire::XS_TRANSACTION_END => parse_path_bool::<TransactionEnd>(md, body),
         wire::XS_RELEASE => parse_metadata_only::<Release>(md),
         wire::XS_GET_DOMAIN_PATH => parse_metadata_only::<GetDomainPath>(md),
         wire::XS_RESUME => parse_metadata_only::<Resume>(md),

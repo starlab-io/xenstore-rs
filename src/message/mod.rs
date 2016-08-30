@@ -20,6 +20,7 @@ use std::cell::RefMut;
 use super::path;
 use store;
 use system;
+use transaction;
 use wire;
 
 pub type Mfn = u64;
@@ -137,12 +138,38 @@ impl ProcessMessage for ingress::Unwatch {
 
 /// process an incoming transaction start request
 impl ProcessMessage for ingress::TransactionStart {
-    fn process(&self, _: RefMut<system::System>) -> Box<egress::Egress> {
-        let tx_id = self.md.tx_id;
+    fn process(&self, sys: RefMut<system::System>) -> Box<egress::Egress> {
+        let mut sys = sys;
+        let tx_id = sys.do_transaction_mut(|txns, store| txns.start(self.md.dom_id, &store));
         Box::new(egress::TransactionStart {
             md: self.md,
             tx_id: tx_id,
-        })
+        }) as Box<egress::Egress>
+    }
+}
+
+/// process an incoming transaction end request
+impl ProcessMessage for ingress::TransactionEnd {
+    fn process(&self, sys: RefMut<system::System>) -> Box<egress::Egress> {
+        let mut sys = sys;
+        debug!("processing transaction end");
+        let complete = if self.value {
+            transaction::TransactionStatus::Success
+        } else {
+            transaction::TransactionStatus::Failure
+        };
+
+        sys.do_transaction_mut(|txns, store| {
+                txns.end(store, self.md.dom_id, self.md.tx_id, complete)
+            })
+            .map(|_| {
+                debug!("ending transaction");
+                Box::new(egress::TransactionEnd { md: self.md }) as Box<egress::Egress>
+            })
+            .unwrap_or_else(|e| {
+                debug!("failing transaction");
+                Box::new(egress::ErrorMsg::from(self.md, &e)) as Box<egress::Egress>
+            })
     }
 }
 
