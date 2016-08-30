@@ -152,16 +152,6 @@ impl Body {
             return None;
         }
 
-        // check that we're null terminated
-        match body.len() {
-            0 => return None,
-            n @ _ => {
-                if body[n - 1] != b'\0' {
-                    return None;
-                }
-            }
-        }
-
         // break the payload at NULL characters
         let res: Vec<Vec<u8>> = body.split(|b| *b == b'\0')
             .filter(|f| f.len() != 0)
@@ -172,14 +162,13 @@ impl Body {
     }
 
     /// Output the body as a vector of bytes
-    pub fn to_vec(&mut self) -> Vec<u8> {
+    pub fn to_vec(&self) -> Vec<u8> {
         let mut ret = Vec::<u8>::with_capacity(BODY_SIZE);
 
         // every field is separated by a NULL byte
         for field in &self.0 {
             if !field.is_empty() {
                 ret.extend_from_slice(&field);
-                ret.push(b'\0');
             }
         }
 
@@ -192,7 +181,7 @@ impl Body {
         self.0
             .iter()
             .filter(|i| !i.is_empty())
-            .map(|i| i.iter().count() + 1)
+            .map(|i| i.iter().count())
             .fold(0, |acc, x| acc + x)
     }
 }
@@ -268,12 +257,6 @@ mod tests {
             // get the byte vector
             let bytes = bytes.0;
 
-            // if its not NULL terminated then we need to bail
-            let expected = match bytes.len() {
-                0 => false,
-                _ => bytes[bytes.len() - 1] == b'\0',
-            };
-
             // build a header
             let header = Header {
                 msg_type: 0,
@@ -283,10 +266,7 @@ mod tests {
             };
 
             // did it parse
-            let result = Body::parse(&header, &bytes).is_some();
-
-            // moar logical biconditional
-            !(expected ^ result)
+            Body::parse(&header, &bytes).is_some()
         }
 
         quickcheck(prop as fn(BodyBytes) -> bool);

@@ -86,7 +86,11 @@ impl Egress for Directory {
         // a build a vector of vectors of u8
         let body = self.paths
             .iter()
-            .map(|p| p.as_bytes().to_owned())
+            .map(|p| {
+                let mut p = p.as_bytes().to_owned();
+                p.push(b'\0');
+                p
+            })
             .collect();
 
         // covert to wire::Body
