@@ -56,7 +56,7 @@ impl Watch {
     pub fn matches(&self, change: &AppliedChange) -> bool {
         match (change, &self.path) {
             (&AppliedChange::Write(ref cpath, _), &WPath::Normal(ref wpath)) => {
-                cpath == wpath && change.perms_ok(self.dom_id, store::PERM_READ)
+                cpath == wpath && change.perms_ok(self.dom_id, store::Perm::Read)
             }
             (&AppliedChange::IntroduceDomain, &WPath::IntroduceDomain) => true,
             (&AppliedChange::ReleaseDomain, &WPath::ReleaseDomain) => true,
@@ -203,7 +203,7 @@ mod test {
                        &path,
                        vec![store::Permission {
                                 id: 1,
-                                perm: store::PERM_NONE,
+                                perm: store::Perm::None,
                             }])
             .unwrap();
 

@@ -94,6 +94,7 @@ ingress_path!(Mkdir);
 ingress_path!(Remove);
 
 ingress_path_rest!(Write);
+ingress_path_rest!(SetPerms);
 
 ingress_no_arg!(Watch);
 ingress_no_arg!(Unwatch);
@@ -111,8 +112,6 @@ pub struct ErrorMsg {
 //    Debug(Metadata, Vec<String>)
 //    TransactionEnd(Metadata, bool)
 //    Introduce(Metadata, Mfn, EvtChnPort)
-//    Write(Metadata, path::Path, transaction::Value)
-//    SetPerms(Metadata, path::Path, Vec<transaction::Permission>)
 //    IsDomainIntroduced(Metadata)
 //    SetTarget(Metadata, wire::DomainId)
 //    Restrict(Metadata)
@@ -202,6 +201,7 @@ pub fn parse(dom_id: wire::DomainId,
         wire::XS_READ => parse_path_only::<Read>(md, body),
         wire::XS_WRITE => parse_path_rest::<Write>(md, body),
         wire::XS_GET_PERMS => parse_path_only::<GetPerms>(md, body),
+        wire::XS_SET_PERMS => parse_path_rest::<SetPerms>(md, body),
         wire::XS_MKDIR => parse_path_only::<Mkdir>(md, body),
         wire::XS_RM => parse_path_only::<Remove>(md, body),
         wire::XS_WATCH => parse_metadata_only::<Watch>(md),

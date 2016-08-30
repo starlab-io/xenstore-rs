@@ -28,12 +28,25 @@ pub const DOM0_DOMAIN_ID: wire::DomainId = 0;
 pub type Basename = String;
 pub type Value = String;
 
-bitflags! {
-    pub flags Perm: u32 {
-        const PERM_NONE  = 0x00000000,
-        const PERM_READ  = 0x00000001,
-        const PERM_WRITE = 0x00000002,
-        const PERM_OWNER = 0x00000004,
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Perm {
+    None,
+    Read,
+    Write,
+    Both,
+}
+
+impl Perm {
+    pub fn allowed(&self, other: &Perm) -> bool {
+        match (*self, *other) {
+            (Perm::None, _) => false,
+            (Perm::Both, _) => true,
+            (Perm::Read, Perm::Read) |
+            (Perm::Read, Perm::Both) => true,
+            (Perm::Write, Perm::Write) |
+            (Perm::Write, Perm::Both) => true,
+            _ => false,
+        }
     }
 }
 
@@ -52,17 +65,17 @@ pub struct Node {
 }
 
 fn perms_ok(dom_id: wire::DomainId, permissions: &[Permission], perm: Perm) -> bool {
-    let mask = PERM_READ | PERM_WRITE | PERM_OWNER;
+    let mask = Perm::Both;
 
     if dom_id == DOM0_DOMAIN_ID || permissions[0].id == dom_id {
-        return (mask & perm) == perm;
+        return mask.allowed(&perm);
     }
 
     if let Some(p) = permissions.iter().find(|p| p.id == dom_id) {
-        return (p.perm & perm) == perm;
+        return p.perm.allowed(&perm);
     }
 
-    return permissions[0].perm & perm == perm;
+    return permissions[0].perm.allowed(&perm);
 }
 
 impl Node {
@@ -140,7 +153,7 @@ fn manual_entry(store: &mut HashMap<Path, Node>, name: Path, child_list: Vec<Bas
                      children: children,
                      permissions: vec![Permission {
                                            id: DOM0_DOMAIN_ID,
-                                           perm: PERM_NONE,
+                                           perm: Perm::None,
                                        }],
                  });
 }
@@ -235,7 +248,7 @@ impl Store {
         let paths_to_create = path.clone()
             .into_iter()
             .take_while(|ref path| {
-                match self.get_node(change_set, dom_id, path, PERM_WRITE) {
+                match self.get_node(change_set, dom_id, path, Perm::Write) {
                     Err(Error::ENOENT(_)) => true,
                     _ => false,
                 }
@@ -252,7 +265,7 @@ impl Store {
             .unwrap()
             .parent()
             .unwrap();
-        let mut list = match self.get_node(change_set, dom_id, &parent_path, PERM_WRITE) {
+        let mut list = match self.get_node(change_set, dom_id, &parent_path, Perm::Write) {
             Ok(parent) => {
                 let mut lst = LinkedList::new();
                 lst.push_back(parent.clone());
@@ -307,7 +320,7 @@ impl Store {
                  value: Value)
                  -> Result<ChangeSet> {
         let node = {
-            self.get_node(change_set, dom_id, &path, PERM_WRITE)
+            self.get_node(change_set, dom_id, &path, Perm::Write)
                 .map(|n| n.clone())
         };
 
@@ -339,7 +352,7 @@ impl Store {
                 dom_id: wire::DomainId,
                 path: &Path)
                 -> Result<Value> {
-        self.get_node(change_set, dom_id, path, PERM_READ)
+        self.get_node(change_set, dom_id, path, Perm::Read)
             .map(|node| node.value.clone())
     }
 
@@ -351,7 +364,7 @@ impl Store {
                  -> Result<ChangeSet> {
         let mut changes = change_set.clone();
 
-        match self.get_node(change_set, dom_id, &path, PERM_WRITE) {
+        match self.get_node(change_set, dom_id, &path, Perm::Write) {
             Err(Error::ENOENT(_)) => {
                 let nodes = try!(self.construct_node(change_set, dom_id, path, Value::from("")));
 
@@ -376,7 +389,7 @@ impl Store {
                      dom_id: wire::DomainId,
                      path: &Path)
                      -> Result<Vec<Basename>> {
-        self.get_node(change_set, dom_id, path, PERM_READ)
+        self.get_node(change_set, dom_id, path, Perm::Read)
             .map(|node| {
                 let mut subdirs = node.children
                     .iter()
@@ -407,7 +420,7 @@ impl Store {
         let mut changes = change_set.clone();
 
         // need to remove entry from the parent first
-        let parent_node = try!(self.get_node(&changes, dom_id, &parent, PERM_WRITE)
+        let parent_node = try!(self.get_node(&changes, dom_id, &parent, Perm::Write)
             .map(|node| {
                 let mut children = node.children.clone();
                 children.remove(&basename);
@@ -421,7 +434,7 @@ impl Store {
         while let Some(path) = remove.pop_front() {
             // Grab a list of all of the children
             let node = {
-                try!(self.get_node(change_set, dom_id, &path, PERM_WRITE))
+                try!(self.get_node(change_set, dom_id, &path, Perm::Write))
             };
 
             // And recursively remove all of its children
@@ -447,7 +460,7 @@ impl Store {
                      dom_id: wire::DomainId,
                      path: &Path)
                      -> Result<Vec<Permission>> {
-        self.get_node(change_set, dom_id, path, PERM_READ)
+        self.get_node(change_set, dom_id, path, Perm::Read)
             .map(|node| node.permissions.clone())
     }
 
@@ -463,7 +476,7 @@ impl Store {
                      permissions: Vec<Permission>)
                      -> Result<ChangeSet> {
         let node = {
-            try!(self.get_node(change_set, dom_id, path, PERM_WRITE)
+            try!(self.get_node(change_set, dom_id, path, Perm::Write)
                 .map(|node| node.clone()))
         };
 
@@ -722,7 +735,7 @@ mod test {
         assert_eq!(permissions,
                    vec![Permission {
                             id: DOM0_DOMAIN_ID,
-                            perm: PERM_NONE,
+                            perm: Perm::None,
                         }]);
     }
 
@@ -740,7 +753,7 @@ mod test {
                        &Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap(),
                        vec![Permission {
                                 id: 1,
-                                perm: PERM_NONE,
+                                perm: Perm::None,
                             }])
             .unwrap();
 
@@ -761,11 +774,11 @@ mod test {
         let perms = vec![
             Permission {
                 id: 1,
-                perm: PERM_NONE,
+                perm: Perm::None,
             },
             Permission {
                 id: 2,
-                perm: PERM_READ,
+                perm: Perm::Read,
             },
         ];
 
@@ -789,11 +802,11 @@ mod test {
         let perms = vec![
             Permission {
                 id: 1,
-                perm: PERM_NONE,
+                perm: Perm::None,
             },
             Permission {
                 id: 2,
-                perm: PERM_READ,
+                perm: Perm::Read,
             },
         ];
 
@@ -821,11 +834,11 @@ mod test {
         let perms = vec![
             Permission {
                 id: 1,
-                perm: PERM_NONE,
+                perm: Perm::None,
             },
             Permission {
                 id: 2,
-                perm: PERM_READ,
+                perm: Perm::Read,
             },
         ];
 
@@ -856,7 +869,7 @@ mod test {
                        &Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap(),
                        vec![Permission {
                                 id: 1,
-                                perm: PERM_NONE,
+                                perm: Perm::None,
                             }])
             .unwrap();
 
@@ -892,7 +905,7 @@ mod test {
                        &Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap(),
                        vec![Permission {
                                 id: 1,
-                                perm: PERM_NONE,
+                                perm: Perm::None,
                             }])
             .unwrap();
 
@@ -934,7 +947,7 @@ mod test {
                        &Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap(),
                        vec![Permission {
                                 id: 1,
-                                perm: PERM_NONE,
+                                perm: Perm::None,
                             }])
             .unwrap();
 
@@ -968,7 +981,7 @@ mod test {
                        &domain,
                        vec![Permission {
                                 id: 1,
-                                perm: PERM_NONE,
+                                perm: Perm::None,
                             }])
             .unwrap();
 

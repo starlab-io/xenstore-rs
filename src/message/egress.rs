@@ -152,6 +152,36 @@ impl Egress for GetPerms {
     fn md(&self) -> &Metadata {
         &self.md
     }
+
+    fn encode(&self) -> (wire::Header, wire::Body) {
+        let perms = self.perms
+            .iter()
+            .map(|p| {
+                let pstr = match p.perm {
+                    store::Perm::Read => "r",
+                    store::Perm::Write => "w",
+                    store::Perm::Both => "b",
+                    _ => "n",
+                };
+                let string = format!("{}{}", pstr, p.id);
+                let mut bytes = string.as_bytes().to_owned();
+                bytes.push(b'\0');
+                bytes
+            })
+            .collect();
+
+        // convert to wire::Body
+        let body = wire::Body(perms);
+
+        let header = wire::Header {
+            msg_type: self.msg_type(),
+            req_id: self.md().req_id,
+            tx_id: self.md().tx_id,
+            len: body.len() as u32,
+        };
+
+        (header, body)
+    }
 }
 
 pub struct TransactionStart {

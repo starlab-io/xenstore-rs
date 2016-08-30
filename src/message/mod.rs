@@ -18,6 +18,7 @@
 
 use std::cell::RefMut;
 use super::path;
+use store;
 use system;
 use wire;
 
@@ -76,11 +77,19 @@ impl ProcessMessage for ingress::Read {
 
 /// process an incoming get permissions request
 impl ProcessMessage for ingress::GetPerms {
-    fn process(&self, _: RefMut<system::System>) -> Box<egress::Egress> {
-        Box::new(egress::GetPerms {
-            md: self.md,
-            perms: vec![],
-        })
+    fn process(&self, sys: RefMut<system::System>) -> Box<egress::Egress> {
+        sys.do_store(self.md.dom_id,
+                      self.md.tx_id,
+                      |store, changes| store.get_perms(changes, self.md.dom_id, &self.path))
+            .map(|perms| {
+                Box::new(egress::GetPerms {
+                    md: self.md,
+                    perms: perms,
+                }) as Box<egress::Egress>
+            })
+            .unwrap_or_else(|e| {
+                Box::new(egress::ErrorMsg::from(self.md, &e)) as Box<egress::Egress>
+            })
     }
 }
 
@@ -186,6 +195,39 @@ impl ProcessMessage for ingress::Write {
                             self.rest[0].clone())
             })
             .map(|_| Box::new(egress::Write { md: self.md }) as Box<egress::Egress>)
+            .unwrap_or_else(|e| {
+                Box::new(egress::ErrorMsg::from(self.md, &e)) as Box<egress::Egress>
+            })
+    }
+}
+
+/// process an incoming set_perms request
+impl ProcessMessage for ingress::SetPerms {
+    fn process(&self, sys: RefMut<system::System>) -> Box<egress::Egress> {
+        let perms = self.rest
+            .iter()
+            .map(|s| {
+                // FIXME: get rid of the unwraps here
+                let id = s[1..].parse::<wire::DomainId>().unwrap();
+                let perm = match s.chars().nth(0).unwrap() {
+                    'r' => store::Perm::Read,
+                    'w' => store::Perm::Write,
+                    'b' => store::Perm::Both,
+                    _ => store::Perm::None,
+                };
+
+                store::Permission {
+                    id: id,
+                    perm: perm,
+                }
+            })
+            .collect();
+
+        let mut sys = sys;
+        sys.do_store_mut(self.md.dom_id, self.md.tx_id, |store, changes| {
+                store.set_perms(changes, self.md.dom_id, &self.path, perms)
+            })
+            .map(|_| Box::new(egress::SetPerms { md: self.md }) as Box<egress::Egress>)
             .unwrap_or_else(|e| {
                 Box::new(egress::ErrorMsg::from(self.md, &e)) as Box<egress::Egress>
             })
