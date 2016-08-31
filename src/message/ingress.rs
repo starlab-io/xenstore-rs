@@ -18,11 +18,15 @@
 
 use std::str;
 use super::*;
-use super::super::{path, wire};
+use super::super::{path, watch, wire};
 use super::super::error::{Error, Result};
 
 pub trait IngressPath {
     fn new(Metadata, path::Path) -> Self;
+}
+
+pub trait IngressWPath {
+    fn new(Metadata, watch::WPath, watch::WPath) -> Self;
 }
 
 pub trait IngressPathRest {
@@ -49,6 +53,26 @@ macro_rules! ingress_path {
                 $id {
                     md: md,
                     path: path,
+                }
+            }
+        }
+    }
+}
+
+macro_rules! ingress_wpath {
+    ($id:ident) => {
+        pub struct $id {
+            pub md: Metadata,
+            pub node: watch::WPath,
+            pub token: watch::WPath,
+        }
+
+        impl IngressWPath for $id {
+            fn new(md: Metadata, node: watch::WPath, token: watch::WPath) -> $id {
+                $id {
+                    md: md,
+                    node: node,
+                    token: token,
                 }
             }
         }
@@ -120,8 +144,9 @@ ingress_path_rest!(SetPerms);
 
 ingress_bool!(TransactionEnd);
 
-ingress_no_arg!(Watch);
-ingress_no_arg!(Unwatch);
+ingress_wpath!(Watch);
+ingress_wpath!(Unwatch);
+
 ingress_no_arg!(TransactionStart);
 ingress_no_arg!(Release);
 ingress_no_arg!(GetDomainPath);
@@ -174,6 +199,19 @@ fn parse_path_only<T: 'static + IngressPath + ProcessMessage>(md: Metadata,
     let path = try!(to_path_str(&body).and_then(|p| path::Path::try_from(dom_id, p)));
 
     Ok(Box::new(T::new(md, path)))
+}
+
+fn parse_wpaths<T: 'static + IngressWPath + ProcessMessage>(md: Metadata,
+                                                            body: wire::Body)
+                                                            -> Result<Box<ProcessMessage>> {
+    let dom_id = md.dom_id;
+    let (node, token) = try!(to_strs(&body).and_then(|strs| {
+        watch::WPath::try_from(dom_id, strs[0]).and_then(|node| {
+            watch::WPath::try_from(dom_id, strs[1]).and_then(|token| Ok((node, token)))
+        })
+    }));
+
+    Ok(Box::new(T::new(md, node, token)))
 }
 
 fn parse_path_rest<T: 'static + IngressPathRest + ProcessMessage>
@@ -246,8 +284,8 @@ pub fn parse(dom_id: wire::DomainId,
         wire::XS_SET_PERMS => parse_path_rest::<SetPerms>(md, body),
         wire::XS_MKDIR => parse_path_only::<Mkdir>(md, body),
         wire::XS_RM => parse_path_only::<Remove>(md, body),
-        wire::XS_WATCH => parse_metadata_only::<Watch>(md),
-        wire::XS_UNWATCH => parse_metadata_only::<Unwatch>(md),
+        wire::XS_WATCH => parse_wpaths::<Watch>(md, body),
+        wire::XS_UNWATCH => parse_wpaths::<Unwatch>(md, body),
         wire::XS_TRANSACTION_START => parse_metadata_only::<TransactionStart>(md),
         wire::XS_TRANSACTION_END => parse_path_bool::<TransactionEnd>(md, body),
         wire::XS_RELEASE => parse_metadata_only::<Release>(md),

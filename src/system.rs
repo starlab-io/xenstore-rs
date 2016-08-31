@@ -129,7 +129,9 @@ mod test {
 
         // set up a watch
         system.do_watch_mut(|watch_list| {
-                watch_list.watch(store::DOM0_DOMAIN_ID, watch::WPath::Normal(path.clone()))
+                watch_list.watch(store::DOM0_DOMAIN_ID,
+                                 watch::WPath::Normal(path.clone()),
+                                 watch::WPath::Normal(path.clone()))
             })
             .unwrap();
 

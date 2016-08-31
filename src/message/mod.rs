@@ -124,15 +124,29 @@ impl ProcessMessage for ingress::Remove {
 
 /// process an incoming watch request
 impl ProcessMessage for ingress::Watch {
-    fn process(&self, _: RefMut<system::System>) -> Box<egress::Egress> {
-        Box::new(egress::Watch { md: self.md })
+    fn process(&self, sys: RefMut<system::System>) -> Box<egress::Egress> {
+        let mut sys = sys;
+        sys.do_watch_mut(|watches| {
+                watches.watch(self.md.dom_id, self.node.clone(), self.token.clone())
+            })
+            .map(|_| Box::new(egress::Watch { md: self.md }) as Box<egress::Egress>)
+            .unwrap_or_else(|e| {
+                Box::new(egress::ErrorMsg::from(self.md, &e)) as Box<egress::Egress>
+            })
     }
 }
 
 /// process an incoming unwatch request
 impl ProcessMessage for ingress::Unwatch {
-    fn process(&self, _: RefMut<system::System>) -> Box<egress::Egress> {
-        Box::new(egress::Unwatch { md: self.md })
+    fn process(&self, sys: RefMut<system::System>) -> Box<egress::Egress> {
+        let mut sys = sys;
+        sys.do_watch_mut(|watches| {
+                watches.unwatch(self.md.dom_id, self.node.clone(), self.token.clone())
+            })
+            .map(|_| Box::new(egress::Unwatch { md: self.md }) as Box<egress::Egress>)
+            .unwrap_or_else(|e| {
+                Box::new(egress::ErrorMsg::from(self.md, &e)) as Box<egress::Egress>
+            })
     }
 }
 
