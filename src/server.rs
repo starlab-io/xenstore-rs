@@ -20,10 +20,12 @@ extern crate mio;
 extern crate rustc_serialize;
 
 use message::ingress;
+use message::egress;
 use self::mio::{TryRead, TryWrite};
 use self::mio::unix::{UnixListener, UnixStream};
 use self::mio::util::Slab;
 use std::cell::{RefCell, RefMut};
+use std::collections::VecDeque;
 use std::io;
 use store;
 use system::System;
@@ -157,6 +159,9 @@ impl mio::Handler for Server {
     }
 }
 
+type Buffer = io::Cursor<Vec<u8>>;
+type TransmissionQueue = VecDeque<Buffer>;
+
 struct Connection {
     // accepted socket
     sock: UnixStream,
@@ -164,6 +169,8 @@ struct Connection {
     token: mio::Token,
     // current state of this connection
     state: State,
+    // outgoing messages enqueued for transmission
+    tx_q: TransmissionQueue,
 }
 
 impl Connection {
@@ -172,7 +179,14 @@ impl Connection {
             sock: sock,
             token: token,
             state: State::transition_awaiting_header(),
+            tx_q: TransmissionQueue::new(),
         }
+    }
+
+    fn enqueue(&mut self, msg: Box<egress::Egress>) {
+        let (hdr, body) = msg.encode();
+        self.tx_q.push_back(Buffer::new(hdr.to_vec()));
+        self.tx_q.push_back(Buffer::new(body.to_vec()));
     }
 
     fn ready(&mut self,
@@ -206,8 +220,7 @@ impl Connection {
                         events);
                 self.read(system)
             }
-            State::WriteHeader(..) |
-            State::WriteBody(..) => {
+            State::Write => {
                 assert!(events.is_writable(),
                         "CONN: {:?} unexpected events: {:?}",
                         self.token,
@@ -260,8 +273,7 @@ impl Connection {
         let event_set = match self.state {
             State::AwaitingHeader(..) => mio::EventSet::readable(),
             State::AwaitingBody(..) => mio::EventSet::readable(),
-            State::WriteHeader(..) => mio::EventSet::writable(),
-            State::WriteBody(..) => mio::EventSet::writable(),
+            State::Write => mio::EventSet::writable(),
             State::Closed => {
                 return event_loop.deregister(&self.sock);
             }
@@ -287,7 +299,7 @@ impl Connection {
         let new_state = match self.state {
             State::AwaitingHeader(ref mut buf) => {
                 if let Some(header) = try!(Self::read_header(&mut self.sock, buf)) {
-                    Some(State::transition_awaiting_body(header))
+                    Some((State::transition_awaiting_body(header), None))
                 } else {
                     None
                 }
@@ -297,20 +309,24 @@ impl Connection {
                     // when we successfully have a message body parse the entire thing
                     // if we got a successful message back we need to actually process
                     // encode the response for being transmitted
-                    let (resp_hdr, resp_body) = ingress::parse(store::DOM0_DOMAIN_ID, header, body)
-                        .process(system)
-                        .encode();
-                    State::transition_write_header(resp_hdr, resp_body)
+                    let msg = ingress::parse(store::DOM0_DOMAIN_ID, header, body).process(system);
+                    (State::transition_write(), Some(msg))
                 })
             }
             _ => unreachable!(),
         };
 
-        debug!("CONN: {:?} STATE CHANGE: {:?}", self.token, new_state);
-
         // if the state was updated then save it
-        if let Some(new_state) = new_state {
+        if let Some((new_state, tx)) = new_state {
+            debug!("CONN: {:?} STATE CHANGE: {:?}", self.token, new_state);
+
             self.state = new_state;
+
+            // enqueue outgoing tx messages onto our tx queue
+            match tx {
+                Some(msg) => self.enqueue(msg),
+                None => (),
+            }
         }
 
         Ok(())
@@ -343,26 +359,24 @@ impl Connection {
 
     /// Handle write events for the connection from the event loop
     fn write(&mut self) -> io::Result<()> {
-        let new_state = match self.state {
-            State::WriteHeader(ref mut header, ref mut body) => {
-                match try!(Self::write_bytes(&mut self.sock, header)) {
-                    Some(_) => Some(State::transition_write_body(body)),
-                    None => None,
-                }
-            }
-            State::WriteBody(ref mut body) => {
-                match try!(Self::write_bytes(&mut self.sock, body)) {
-                    Some(_) => Some(State::transition_awaiting_header()),
-                    None => None,
-                }
+        let success = match self.state {
+            State::Write => {
+                let header = self.tx_q.front_mut().unwrap();
+                try!(Self::write_bytes(&mut self.sock, header)).is_some()
             }
             _ => unreachable!(),
         };
 
         // if the state was updated then save it
-        if let Some(new_state) = new_state {
-            debug!("CONN: {:?} STATE CHANGE: {:?}", self.token, new_state);
-            self.state = new_state;
+        if success {
+            // if we were successful, we consumed the head of the queue
+            self.tx_q.pop_front();
+
+            if self.tx_q.is_empty() {
+                let new_state = State::transition_awaiting_header();
+                debug!("CONN: {:?} STATE CHANGE: {:?}", self.token, new_state);
+                self.state = new_state;
+            }
         }
 
         Ok(())
@@ -406,10 +420,8 @@ enum State {
     AwaitingHeader(Vec<u8>),
     // read the body into the buffer
     AwaitingBody(wire::Header, Vec<u8>),
-    // write the response header out
-    WriteHeader(io::Cursor<Vec<u8>>, wire::Body),
-    // write the response body out
-    WriteBody(io::Cursor<Vec<u8>>),
+    // write the data out
+    Write,
     // closed and time to clean up
     Closed,
 }
@@ -424,11 +436,7 @@ impl State {
         State::AwaitingBody(header, Vec::<u8>::with_capacity(len))
     }
 
-    fn transition_write_header(header: wire::Header, body: wire::Body) -> State {
-        State::WriteHeader(io::Cursor::new(header.to_vec()), body)
-    }
-
-    fn transition_write_body(body: &mut wire::Body) -> State {
-        State::WriteBody(io::Cursor::new(body.to_vec()))
+    fn transition_write() -> State {
+        State::Write
     }
 }
