@@ -18,7 +18,7 @@
 
 use std::error::Error;
 use super::*;
-use super::super::{error, path, store, wire};
+use super::super::{error, path, store, watch, wire};
 
 pub trait Egress {
     fn msg_type(&self) -> u32;
@@ -62,7 +62,6 @@ egress_no_arg!(Write, wire::XS_WRITE);
 egress_no_arg!(Mkdir, wire::XS_MKDIR);
 egress_no_arg!(Remove, wire::XS_RM);
 egress_no_arg!(SetPerms, wire::XS_SET_PERMS);
-egress_no_arg!(WatchEvent, wire::XS_WATCH_EVENT);
 egress_no_arg!(Resume, wire::XS_RESUME);
 egress_no_arg!(SetTarget, wire::XS_SET_TARGET);
 egress_no_arg!(Restrict, wire::XS_RESTRICT);
@@ -266,5 +265,57 @@ impl Egress for ErrorMsg {
 
     fn md(&self) -> &Metadata {
         &self.md
+    }
+}
+
+pub struct WatchEvent {
+    pub md: Metadata,
+    pub node: watch::WPath,
+    pub token: watch::WPath,
+}
+
+impl WatchEvent {
+    pub fn new(watch: watch::Watch) -> WatchEvent {
+        WatchEvent {
+            md: Metadata {
+                conn: watch.conn,
+                req_id: 0,
+                tx_id: 0,
+            },
+            node: watch.node,
+            token: watch.token,
+        }
+    }
+}
+
+impl Egress for WatchEvent {
+    fn msg_type(&self) -> u32 {
+        wire::XS_WATCH_EVENT
+    }
+
+    fn md(&self) -> &Metadata {
+        &self.md
+    }
+
+    fn encode(&self) -> (wire::Header, wire::Body) {
+
+        // convert to wire::Body
+        let body = wire::Body(vec![&self.node, &self.token]
+            .iter()
+            .map(|p| {
+                let mut p = p.as_bytes().to_owned();
+                p.push(b'\0');
+                p
+            })
+            .collect());
+
+        let header = wire::Header {
+            msg_type: self.msg_type(),
+            req_id: self.md().req_id,
+            tx_id: self.md().tx_id,
+            len: body.len() as u32,
+        };
+
+        (header, body)
     }
 }

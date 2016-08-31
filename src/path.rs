@@ -17,6 +17,7 @@
 **/
 
 use std::iter::{IntoIterator, Iterator};
+use std::os::unix::ffi::OsStrExt;
 use std::path;
 use super::error::{Error, Result};
 use super::wire;
@@ -103,6 +104,12 @@ impl Path {
         };
 
         Ok(Path(internal))
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        self.0
+            .as_os_str()
+            .as_bytes()
     }
 
     pub fn basename(self: &Path) -> Option<String> {

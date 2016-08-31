@@ -38,13 +38,21 @@ impl WPath {
             _ => Path::try_from(dom_id, s).map(WPath::Normal),
         }
     }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        match *self {
+            WPath::Normal(ref path) => path.as_bytes(),
+            WPath::IntroduceDomain => "@introduceDomain".as_bytes(),
+            WPath::ReleaseDomain => "@releaseDomain".as_bytes(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Watch {
-    conn: ConnId,
-    node: WPath,
-    token: WPath,
+    pub conn: ConnId,
+    pub node: WPath,
+    pub token: WPath,
 }
 
 impl Watch {
