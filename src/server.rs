@@ -328,7 +328,7 @@ impl Connection {
 
             // enqueue outgoing tx messages onto our tx queue
             match tx {
-                Some(msg) => self.enqueue(msg),
+                Some(msg) => self.enqueue(msg.msg),
                 None => (),
             }
         }
