@@ -19,6 +19,7 @@
 extern crate mio;
 extern crate rustc_serialize;
 
+use connection;
 use message::ingress;
 use message::egress;
 use self::mio::{TryRead, TryWrite};
@@ -166,7 +167,7 @@ struct Connection {
     // accepted socket
     sock: UnixStream,
     // identifying token for the event loop
-    token: mio::Token,
+    conn: connection::ConnId,
     // current state of this connection
     state: State,
     // outgoing messages enqueued for transmission
@@ -177,7 +178,7 @@ impl Connection {
     fn new(sock: UnixStream, token: mio::Token) -> Connection {
         Connection {
             sock: sock,
-            token: token,
+            conn: connection::ConnId::new(token, store::DOM0_DOMAIN_ID),
             state: State::transition_awaiting_header(),
             tx_q: TransmissionQueue::new(),
         }
@@ -195,18 +196,19 @@ impl Connection {
              system: RefMut<System>) {
 
         debug!("CONN: {:?}. EVENTS: {:?} STATE: {:?}",
-               self.token,
+               self.conn.token,
                events,
                self.state);
 
         if events.is_error() {
-            debug!("CONN: {:?} unexpected connection error", self.token);
+            debug!("CONN: {:?} unexpected connection error", self.conn.token);
             self.close();
             return;
         }
 
         if events.is_hup() {
-            debug!("CONN: {:?} connection was closed by remote", self.token);
+            debug!("CONN: {:?} connection was closed by remote",
+                   self.conn.token);
             self.close();
             return;
         }
@@ -216,14 +218,14 @@ impl Connection {
             State::AwaitingBody(..) => {
                 assert!(events.is_readable(),
                         "CONN: {:?} unexpected events: {:?}",
-                        self.token,
+                        self.conn.token,
                         events);
                 self.read(system)
             }
             State::Write => {
                 assert!(events.is_writable(),
                         "CONN: {:?} unexpected events: {:?}",
-                        self.token,
+                        self.conn.token,
                         events);
                 self.write()
             }
@@ -233,7 +235,7 @@ impl Connection {
         match result {
             // if we processed this and there was an error shut 'er down
             Err(e) => {
-                error!("CONN: {:?} failed read|write: {:?}", self.token, e);
+                error!("CONN: {:?} failed read|write: {:?}", self.conn.token, e);
                 self.close();
             }
             Ok(_) => {
@@ -254,15 +256,15 @@ impl Connection {
         };
 
         debug!("CONN: {:?} register to event loop for events: {:?}",
-               self.token,
+               self.conn.token,
                event_set);
 
         event_loop.register(&self.sock,
-                      self.token,
+                      self.conn.token,
                       event_set,
                       mio::PollOpt::edge() | mio::PollOpt::oneshot())
             .or_else(|e| {
-                error!("CONN: {:?} Failed to register: {:?}", self.token, e);
+                error!("CONN: {:?} Failed to register: {:?}", self.conn.token, e);
                 Err(e)
             })
     }
@@ -280,15 +282,15 @@ impl Connection {
         };
 
         debug!("CONN: {:?} reregister to event loop for events: {:?}",
-               self.token,
+               self.conn.token,
                event_set);
 
         event_loop.reregister(&self.sock,
-                        self.token,
+                        self.conn.token,
                         event_set,
                         mio::PollOpt::edge() | mio::PollOpt::oneshot())
             .or_else(|e| {
-                error!("CONN: {:?} Failed to reregister: {:?}", self.token, e);
+                error!("CONN: {:?} Failed to reregister: {:?}", self.conn.token, e);
                 Err(e)
             })
     }
@@ -296,6 +298,8 @@ impl Connection {
 
     /// Handle read events for the connection from the event loop
     fn read(&mut self, system: RefMut<System>) -> io::Result<()> {
+        let conn = self.conn;
+
         let new_state = match self.state {
             State::AwaitingHeader(ref mut buf) => {
                 if let Some(header) = try!(Self::read_header(&mut self.sock, buf)) {
@@ -309,7 +313,7 @@ impl Connection {
                     // when we successfully have a message body parse the entire thing
                     // if we got a successful message back we need to actually process
                     // encode the response for being transmitted
-                    let msg = ingress::parse(store::DOM0_DOMAIN_ID, header, body).process(system);
+                    let msg = ingress::parse(conn, header, body).process(system);
                     (State::transition_write(), Some(msg))
                 })
             }
@@ -318,7 +322,7 @@ impl Connection {
 
         // if the state was updated then save it
         if let Some((new_state, tx)) = new_state {
-            debug!("CONN: {:?} STATE CHANGE: {:?}", self.token, new_state);
+            debug!("CONN: {:?} STATE CHANGE: {:?}", self.conn.token, new_state);
 
             self.state = new_state;
 
@@ -374,7 +378,7 @@ impl Connection {
 
             if self.tx_q.is_empty() {
                 let new_state = State::transition_awaiting_header();
-                debug!("CONN: {:?} STATE CHANGE: {:?}", self.token, new_state);
+                debug!("CONN: {:?} STATE CHANGE: {:?}", self.conn.token, new_state);
                 self.state = new_state;
             }
         }
@@ -401,7 +405,7 @@ impl Connection {
 
     /// Close this connection
     fn close(&mut self) {
-        debug!("CONN: {:?} closed", self.token);
+        debug!("CONN: {:?} closed", self.conn.token);
         self.state = State::Closed
     }
 

@@ -16,28 +16,22 @@
     with this program; if not, see <http://www.gnu.org/licenses/>.
 **/
 
-extern crate byteorder;
-#[macro_use]
-extern crate bitflags;
+extern crate mio;
 
-#[macro_use]
-extern crate lazy_static;
+use self::mio::Token;
+use wire::DomainId;
 
-#[macro_use]
-extern crate log;
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct ConnId {
+    pub token: Token,
+    pub dom_id: DomainId,
+}
 
-extern crate rand;
-
-#[macro_use]
-extern crate try_opt;
-
-pub mod connection;
-pub mod error;
-pub mod message;
-pub mod path;
-pub mod server;
-pub mod store;
-pub mod system;
-pub mod transaction;
-pub mod watch;
-pub mod wire;
+impl ConnId {
+    pub fn new(token: Token, dom_id: DomainId) -> ConnId {
+        ConnId {
+            token: token,
+            dom_id: dom_id,
+        }
+    }
+}

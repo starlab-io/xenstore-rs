@@ -16,6 +16,7 @@
     with this program; if not, see <http://www.gnu.org/licenses/>.
 **/
 
+use connection;
 use std::cell::RefMut;
 use super::path;
 use store;
@@ -28,7 +29,7 @@ pub type EvtChnPort = u16;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Metadata {
-    pub dom_id: wire::DomainId,
+    pub conn: connection::ConnId,
     pub req_id: wire::ReqId,
     pub tx_id: wire::TxId,
 }
@@ -43,9 +44,9 @@ pub trait ProcessMessage {
 /// process an incoming directory request
 impl ProcessMessage for ingress::Directory {
     fn process(&self, sys: RefMut<system::System>) -> Box<egress::Egress> {
-        sys.do_store(self.md.dom_id,
+        sys.do_store(self.md.conn,
                       self.md.tx_id,
-                      |store, changes| store.directory(changes, self.md.dom_id, &self.path))
+                      |store, changes| store.directory(changes, self.md.conn.dom_id, &self.path))
             .map(|entries| {
                 Box::new(egress::Directory {
                     md: self.md,
@@ -61,9 +62,9 @@ impl ProcessMessage for ingress::Directory {
 /// process an incoming read request
 impl ProcessMessage for ingress::Read {
     fn process(&self, sys: RefMut<system::System>) -> Box<egress::Egress> {
-        sys.do_store(self.md.dom_id,
+        sys.do_store(self.md.conn,
                       self.md.tx_id,
-                      |store, changes| store.read(changes, self.md.dom_id, &self.path))
+                      |store, changes| store.read(changes, self.md.conn.dom_id, &self.path))
             .map(|value| {
                 Box::new(egress::Read {
                     md: self.md,
@@ -79,9 +80,9 @@ impl ProcessMessage for ingress::Read {
 /// process an incoming get permissions request
 impl ProcessMessage for ingress::GetPerms {
     fn process(&self, sys: RefMut<system::System>) -> Box<egress::Egress> {
-        sys.do_store(self.md.dom_id,
+        sys.do_store(self.md.conn,
                       self.md.tx_id,
-                      |store, changes| store.get_perms(changes, self.md.dom_id, &self.path))
+                      |store, changes| store.get_perms(changes, self.md.conn.dom_id, &self.path))
             .map(|perms| {
                 Box::new(egress::GetPerms {
                     md: self.md,
@@ -98,9 +99,9 @@ impl ProcessMessage for ingress::GetPerms {
 impl ProcessMessage for ingress::Mkdir {
     fn process(&self, sys: RefMut<system::System>) -> Box<egress::Egress> {
         let mut sys = sys;
-        sys.do_store_mut(self.md.dom_id,
-                          self.md.tx_id,
-                          |store, changes| store.mkdir(changes, self.md.dom_id, self.path.clone()))
+        sys.do_store_mut(self.md.conn, self.md.tx_id, |store, changes| {
+                store.mkdir(changes, self.md.conn.dom_id, self.path.clone())
+            })
             .map(|_| Box::new(egress::Mkdir { md: self.md }) as Box<egress::Egress>)
             .unwrap_or_else(|e| {
                 Box::new(egress::ErrorMsg::from(self.md, &e)) as Box<egress::Egress>
@@ -112,9 +113,9 @@ impl ProcessMessage for ingress::Mkdir {
 impl ProcessMessage for ingress::Remove {
     fn process(&self, sys: RefMut<system::System>) -> Box<egress::Egress> {
         let mut sys = sys;
-        sys.do_store_mut(self.md.dom_id,
+        sys.do_store_mut(self.md.conn,
                           self.md.tx_id,
-                          |store, changes| store.rm(changes, self.md.dom_id, &self.path))
+                          |store, changes| store.rm(changes, self.md.conn.dom_id, &self.path))
             .map(|_| Box::new(egress::Remove { md: self.md }) as Box<egress::Egress>)
             .unwrap_or_else(|e| {
                 Box::new(egress::ErrorMsg::from(self.md, &e)) as Box<egress::Egress>
@@ -127,7 +128,7 @@ impl ProcessMessage for ingress::Watch {
     fn process(&self, sys: RefMut<system::System>) -> Box<egress::Egress> {
         let mut sys = sys;
         sys.do_watch_mut(|watches| {
-                watches.watch(self.md.dom_id, self.node.clone(), self.token.clone())
+                watches.watch(self.md.conn, self.node.clone(), self.token.clone())
             })
             .map(|_| Box::new(egress::Watch { md: self.md }) as Box<egress::Egress>)
             .unwrap_or_else(|e| {
@@ -141,7 +142,7 @@ impl ProcessMessage for ingress::Unwatch {
     fn process(&self, sys: RefMut<system::System>) -> Box<egress::Egress> {
         let mut sys = sys;
         sys.do_watch_mut(|watches| {
-                watches.unwatch(self.md.dom_id, self.node.clone(), self.token.clone())
+                watches.unwatch(self.md.conn, self.node.clone(), self.token.clone())
             })
             .map(|_| Box::new(egress::Unwatch { md: self.md }) as Box<egress::Egress>)
             .unwrap_or_else(|e| {
@@ -154,7 +155,7 @@ impl ProcessMessage for ingress::Unwatch {
 impl ProcessMessage for ingress::TransactionStart {
     fn process(&self, sys: RefMut<system::System>) -> Box<egress::Egress> {
         let mut sys = sys;
-        let tx_id = sys.do_transaction_mut(|txns, store| txns.start(self.md.dom_id, &store));
+        let tx_id = sys.do_transaction_mut(|txns, store| txns.start(self.md.conn, &store));
         Box::new(egress::TransactionStart {
             md: self.md,
             tx_id: tx_id,
@@ -174,7 +175,7 @@ impl ProcessMessage for ingress::TransactionEnd {
         };
 
         sys.do_transaction_mut(|txns, store| {
-                txns.end(store, self.md.dom_id, self.md.tx_id, complete)
+                txns.end(store, self.md.conn, self.md.tx_id, complete)
             })
             .map(|_| {
                 debug!("ending transaction");
@@ -199,7 +200,7 @@ impl ProcessMessage for ingress::GetDomainPath {
     fn process(&self, _: RefMut<system::System>) -> Box<egress::Egress> {
         Box::new(egress::GetDomainPath {
             md: self.md,
-            path: path::get_domain_path(self.md.dom_id),
+            path: path::get_domain_path(self.md.conn.dom_id),
         })
     }
 }
@@ -229,9 +230,9 @@ impl ProcessMessage for ingress::ErrorMsg {
 impl ProcessMessage for ingress::Write {
     fn process(&self, sys: RefMut<system::System>) -> Box<egress::Egress> {
         let mut sys = sys;
-        sys.do_store_mut(self.md.dom_id, self.md.tx_id, |store, changes| {
+        sys.do_store_mut(self.md.conn, self.md.tx_id, |store, changes| {
                 store.write(changes,
-                            self.md.dom_id,
+                            self.md.conn.dom_id,
                             self.path.clone(),
                             self.rest[0].clone())
             })
@@ -265,8 +266,8 @@ impl ProcessMessage for ingress::SetPerms {
             .collect();
 
         let mut sys = sys;
-        sys.do_store_mut(self.md.dom_id, self.md.tx_id, |store, changes| {
-                store.set_perms(changes, self.md.dom_id, &self.path, perms)
+        sys.do_store_mut(self.md.conn, self.md.tx_id, |store, changes| {
+                store.set_perms(changes, self.md.conn.dom_id, &self.path, perms)
             })
             .map(|_| Box::new(egress::SetPerms { md: self.md }) as Box<egress::Egress>)
             .unwrap_or_else(|e| {

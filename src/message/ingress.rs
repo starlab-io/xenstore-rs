@@ -18,7 +18,7 @@
 
 use std::str;
 use super::*;
-use super::super::{path, watch, wire};
+use super::super::{connection, path, watch, wire};
 use super::super::error::{Error, Result};
 
 pub trait IngressPath {
@@ -195,7 +195,7 @@ fn to_path_str<'a>(body: &'a wire::Body) -> Result<&'a str> {
 fn parse_path_only<T: 'static + IngressPath + ProcessMessage>(md: Metadata,
                                                               body: wire::Body)
                                                               -> Result<Box<ProcessMessage>> {
-    let dom_id = md.dom_id;
+    let dom_id = md.conn.dom_id;
     let path = try!(to_path_str(&body).and_then(|p| path::Path::try_from(dom_id, p)));
 
     Ok(Box::new(T::new(md, path)))
@@ -204,7 +204,7 @@ fn parse_path_only<T: 'static + IngressPath + ProcessMessage>(md: Metadata,
 fn parse_wpaths<T: 'static + IngressWPath + ProcessMessage>(md: Metadata,
                                                             body: wire::Body)
                                                             -> Result<Box<ProcessMessage>> {
-    let dom_id = md.dom_id;
+    let dom_id = md.conn.dom_id;
     let (node, token) = try!(to_strs(&body).and_then(|strs| {
         watch::WPath::try_from(dom_id, strs[0]).and_then(|node| {
             watch::WPath::try_from(dom_id, strs[1]).and_then(|token| Ok((node, token)))
@@ -218,7 +218,7 @@ fn parse_path_rest<T: 'static + IngressPathRest + ProcessMessage>
     (md: Metadata,
      body: wire::Body)
      -> Result<Box<ProcessMessage>> {
-    let dom_id = md.dom_id;
+    let dom_id = md.conn.dom_id;
 
     // parse out the Vec<&str>
     let strs = try!(to_strs(&body));
@@ -265,13 +265,13 @@ fn parse_metadata_only<T: 'static + IngressNoArg + ProcessMessage>
     Ok(Box::new(T::new(md)))
 }
 
-pub fn parse(dom_id: wire::DomainId,
+pub fn parse(conn: connection::ConnId,
              header: &wire::Header,
              body: wire::Body)
              -> Box<ProcessMessage> {
 
     let md = Metadata {
-        dom_id: dom_id,
+        conn: conn,
         req_id: header.req_id,
         tx_id: header.tx_id,
     };
@@ -298,7 +298,7 @@ pub fn parse(dom_id: wire::DomainId,
     msg.unwrap_or_else(|e| {
         Box::new(ErrorMsg {
             md: Metadata {
-                dom_id: dom_id,
+                conn: conn,
                 req_id: header.req_id,
                 tx_id: header.tx_id,
             },

@@ -21,6 +21,7 @@ use super::error::{Error, Result};
 use super::path::Path;
 use super::store::{self, AppliedChange};
 use super::wire;
+use super::connection::ConnId;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum WPath {
@@ -41,15 +42,15 @@ impl WPath {
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Watch {
-    dom_id: wire::DomainId,
+    conn: ConnId,
     node: WPath,
     token: WPath,
 }
 
 impl Watch {
-    pub fn new(dom_id: wire::DomainId, node: WPath, token: WPath) -> Watch {
+    pub fn new(conn: ConnId, node: WPath, token: WPath) -> Watch {
         Watch {
-            dom_id: dom_id,
+            conn: conn,
             node: node,
             token: token,
         }
@@ -58,7 +59,7 @@ impl Watch {
     pub fn matches(&self, change: &AppliedChange) -> bool {
         match (change, &self.node) {
             (&AppliedChange::Write(ref cpath, _), &WPath::Normal(ref wpath)) => {
-                cpath == wpath && change.perms_ok(self.dom_id, store::Perm::Read)
+                cpath == wpath && change.perms_ok(self.conn.dom_id, store::Perm::Read)
             }
             (&AppliedChange::IntroduceDomain, &WPath::IntroduceDomain) => true,
             (&AppliedChange::ReleaseDomain, &WPath::ReleaseDomain) => true,
@@ -76,28 +77,28 @@ impl WatchList {
         WatchList { watches: HashSet::new() }
     }
 
-    pub fn watch(&mut self, dom_id: wire::DomainId, node: WPath, token: WPath) -> Result<()> {
-        if !self.watches.insert(Watch::new(dom_id, node.clone(), token)) {
-            return Err(Error::EEXIST(format!("watch {:?} already exists for domain {:?}",
+    pub fn watch(&mut self, conn: ConnId, node: WPath, token: WPath) -> Result<()> {
+        if !self.watches.insert(Watch::new(conn, node.clone(), token)) {
+            return Err(Error::EEXIST(format!("watch {:?} already exists for connection {:?}",
                                              node,
-                                             dom_id)));
+                                             conn)));
         }
         Ok(())
     }
 
-    pub fn unwatch(&mut self, dom_id: wire::DomainId, node: WPath, token: WPath) -> Result<()> {
-        if !self.watches.remove(&Watch::new(dom_id, node.clone(), token)) {
-            return Err(Error::ENOENT(format!("watch {:?} did not exist for domain {:?}",
+    pub fn unwatch(&mut self, conn: ConnId, node: WPath, token: WPath) -> Result<()> {
+        if !self.watches.remove(&Watch::new(conn, node.clone(), token)) {
+            return Err(Error::ENOENT(format!("watch {:?} did not exist for connection {:?}",
                                              node,
-                                             dom_id)));
+                                             conn)));
         }
         Ok(())
     }
 
-    pub fn reset(&mut self, dom_id: wire::DomainId) -> Result<()> {
+    pub fn reset(&mut self, conn: ConnId) -> Result<()> {
         let to_remove = self.watches
             .iter()
-            .filter(|watch| watch.dom_id == dom_id)
+            .filter(|watch| watch.conn == conn)
             .cloned()
             .collect::<Vec<Watch>>();
         for watch in to_remove {
@@ -127,6 +128,10 @@ impl WatchList {
 
 #[cfg(test)]
 mod test {
+    extern crate mio;
+
+    use super::super::connection::ConnId;
+    use self::mio::Token;
     use super::super::path::Path;
     use super::super::store::{self, Value, DOM0_DOMAIN_ID, Store, AppliedChange, ChangeSet};
     use super::*;
@@ -138,7 +143,7 @@ mod test {
         let path = Path::try_from(DOM0_DOMAIN_ID, "/root/file/path").unwrap();
         let value = Value::from("value");
 
-        watch_list.watch(DOM0_DOMAIN_ID,
+        watch_list.watch(ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
                    WPath::Normal(path.clone()),
                    WPath::Normal(path.clone()))
             .unwrap();
@@ -154,7 +159,7 @@ mod test {
 
         assert_eq!(watches.len(), 1);
         assert_eq!(watches.contains(&Watch {
-                       dom_id: DOM0_DOMAIN_ID,
+                       conn: ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
                        node: WPath::Normal(path.clone()),
                        token: WPath::Normal(path),
                    }),
@@ -168,11 +173,14 @@ mod test {
         let path = Path::try_from(DOM0_DOMAIN_ID, "/root/file/path").unwrap();
         let value = Value::from("value");
 
-        watch_list.watch(DOM0_DOMAIN_ID,
+        watch_list.watch(ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
                    WPath::Normal(path.clone()),
                    WPath::Normal(path.clone()))
             .unwrap();
-        watch_list.watch(1, WPath::Normal(path.clone()), WPath::Normal(path.clone())).unwrap();
+        watch_list.watch(ConnId::new(Token(1), 1),
+                   WPath::Normal(path.clone()),
+                   WPath::Normal(path.clone()))
+            .unwrap();
 
         let changes = store.write(&ChangeSet::new(&store),
                    DOM0_DOMAIN_ID,
@@ -185,7 +193,7 @@ mod test {
 
         assert_eq!(watches.len(), 1);
         assert_eq!(watches.contains(&Watch {
-                       dom_id: DOM0_DOMAIN_ID,
+                       conn: ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
                        node: WPath::Normal(path.clone()),
                        token: WPath::Normal(path),
                    }),
@@ -199,11 +207,14 @@ mod test {
         let path = Path::try_from(DOM0_DOMAIN_ID, "/root/file/path").unwrap();
         let value = Value::from("value");
 
-        watch_list.watch(DOM0_DOMAIN_ID,
+        watch_list.watch(ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
                    WPath::Normal(path.clone()),
                    WPath::Normal(path.clone()))
             .unwrap();
-        watch_list.watch(1, WPath::Normal(path.clone()), WPath::Normal(path.clone())).unwrap();
+        watch_list.watch(ConnId::new(Token(1), 1),
+                   WPath::Normal(path.clone()),
+                   WPath::Normal(path.clone()))
+            .unwrap();
 
         let changes = store.write(&ChangeSet::new(&store),
                    DOM0_DOMAIN_ID,
@@ -224,11 +235,12 @@ mod test {
         let watches = watch_list.fire(applied);
 
         assert_eq!(watches.len(), 2);
-        assert_eq!(watches.contains(&Watch::new(DOM0_DOMAIN_ID,
+        assert_eq!(watches.contains(&Watch::new(ConnId::new(Token(DOM0_DOMAIN_ID as usize),
+                                                            DOM0_DOMAIN_ID),
                                                 WPath::Normal(path.clone()),
                                                 WPath::Normal(path.clone()))),
                    true);
-        assert_eq!(watches.contains(&Watch::new(1,
+        assert_eq!(watches.contains(&Watch::new(ConnId::new(Token(1), 1),
                                                 WPath::Normal(path.clone()),
                                                 WPath::Normal(path.clone()))),
                    true);
@@ -241,7 +253,7 @@ mod test {
         let path = Path::try_from(DOM0_DOMAIN_ID, "/root/file/path").unwrap();
         let value = Value::from("value");
 
-        watch_list.watch(DOM0_DOMAIN_ID,
+        watch_list.watch(ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
                    WPath::Normal(path.parent().unwrap()),
                    WPath::Normal(path.parent().unwrap()))
             .unwrap();
@@ -257,7 +269,7 @@ mod test {
 
         assert_eq!(watches.len(), 1);
         assert_eq!(watches.contains(&Watch {
-                       dom_id: DOM0_DOMAIN_ID,
+                       conn: ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
                        node: WPath::Normal(path.parent().unwrap()),
                        token: WPath::Normal(path.parent().unwrap()),
                    }),
@@ -282,11 +294,11 @@ mod test {
         let path = Path::try_from(DOM0_DOMAIN_ID, "/root/file/path").unwrap();
         let value = Value::from("value");
 
-        watch_list.watch(DOM0_DOMAIN_ID,
+        watch_list.watch(ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
                    WPath::Normal(path.parent().unwrap()),
                    WPath::Normal(path.parent().unwrap()))
             .unwrap();
-        watch_list.watch(DOM0_DOMAIN_ID,
+        watch_list.watch(ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
                    WPath::Normal(path.clone()),
                    WPath::Normal(path.clone()))
             .unwrap();
@@ -302,13 +314,13 @@ mod test {
 
         assert_eq!(watches.len(), 2);
         assert_eq!(watches.contains(&Watch {
-                       dom_id: DOM0_DOMAIN_ID,
+                       conn: ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
                        node: WPath::Normal(path.parent().unwrap()),
                        token: WPath::Normal(path.parent().unwrap()),
                    }),
                    true);
         assert_eq!(watches.contains(&Watch {
-                       dom_id: DOM0_DOMAIN_ID,
+                       conn: ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
                        node: WPath::Normal(path.clone()),
                        token: WPath::Normal(path.clone()),
                    }),
@@ -322,7 +334,7 @@ mod test {
 
         assert_eq!(watches.len(), 1);
         assert_eq!(watches.contains(&Watch {
-                       dom_id: DOM0_DOMAIN_ID,
+                       conn: ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
                        node: WPath::Normal(path.parent().unwrap()),
                        token: WPath::Normal(path.parent().unwrap()),
                    }),
@@ -333,17 +345,20 @@ mod test {
     fn basic_watch_introduce_domain() {
         let mut watch_list = WatchList::new();
 
-        watch_list.watch(DOM0_DOMAIN_ID,
+        watch_list.watch(ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
                    WPath::IntroduceDomain,
                    WPath::IntroduceDomain)
             .unwrap();
-        watch_list.watch(DOM0_DOMAIN_ID, WPath::ReleaseDomain, WPath::ReleaseDomain).unwrap();
+        watch_list.watch(ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
+                   WPath::ReleaseDomain,
+                   WPath::ReleaseDomain)
+            .unwrap();
 
         let watches = watch_list.fire_single(&AppliedChange::IntroduceDomain);
 
         assert_eq!(watches.len(), 1);
         assert_eq!(watches.contains(&Watch {
-                       dom_id: DOM0_DOMAIN_ID,
+                       conn: ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
                        node: WPath::IntroduceDomain,
                        token: WPath::IntroduceDomain,
                    }),
@@ -354,17 +369,20 @@ mod test {
     fn basic_watch_release_domain() {
         let mut watch_list = WatchList::new();
 
-        watch_list.watch(DOM0_DOMAIN_ID,
+        watch_list.watch(ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
                    WPath::IntroduceDomain,
                    WPath::IntroduceDomain)
             .unwrap();
-        watch_list.watch(DOM0_DOMAIN_ID, WPath::ReleaseDomain, WPath::ReleaseDomain).unwrap();
+        watch_list.watch(ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
+                   WPath::ReleaseDomain,
+                   WPath::ReleaseDomain)
+            .unwrap();
 
         let watches = watch_list.fire_single(&AppliedChange::ReleaseDomain);
 
         assert_eq!(watches.len(), 1);
         assert_eq!(watches.contains(&Watch {
-                       dom_id: DOM0_DOMAIN_ID,
+                       conn: ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
                        node: WPath::ReleaseDomain,
                        token: WPath::ReleaseDomain,
                    }),
@@ -375,18 +393,24 @@ mod test {
     fn basic_watch_reset() {
         let mut watch_list = WatchList::new();
 
-        watch_list.watch(DOM0_DOMAIN_ID,
+        watch_list.watch(ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
                    WPath::IntroduceDomain,
                    WPath::IntroduceDomain)
             .unwrap();
-        watch_list.watch(DOM0_DOMAIN_ID, WPath::ReleaseDomain, WPath::ReleaseDomain).unwrap();
-        watch_list.watch(1, WPath::ReleaseDomain, WPath::ReleaseDomain).unwrap();
+        watch_list.watch(ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
+                   WPath::ReleaseDomain,
+                   WPath::ReleaseDomain)
+            .unwrap();
+        watch_list.watch(ConnId::new(Token(1 as usize), 1),
+                   WPath::ReleaseDomain,
+                   WPath::ReleaseDomain)
+            .unwrap();
 
-        watch_list.reset(DOM0_DOMAIN_ID).unwrap();
+        watch_list.reset(ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID)).unwrap();
 
         assert_eq!(watch_list.watches.len(), 1);
         assert_eq!(watch_list.watches.contains(&Watch {
-                       dom_id: 1,
+                       conn: ConnId::new(Token(1 as usize), 1),
                        node: WPath::ReleaseDomain,
                        token: WPath::ReleaseDomain,
                    }),

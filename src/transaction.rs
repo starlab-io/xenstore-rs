@@ -20,6 +20,7 @@ use error::{Error, Result};
 use rand::{Rng, thread_rng};
 use std::boxed::Box;
 use std::collections::HashMap;
+use super::connection::ConnId;
 use super::wire;
 use super::store::{ChangeSet, Store, AppliedChange};
 
@@ -27,7 +28,7 @@ use super::store::{ChangeSet, Store, AppliedChange};
 pub const ROOT_TRANSACTION: wire::TxId = 0;
 
 struct Transaction {
-    dom_id: wire::DomainId,
+    conn: ConnId,
     changes: ChangeSet,
 }
 
@@ -71,14 +72,14 @@ impl TransactionList {
     /// Start a new transaction.
     ///
     /// Returns the `TxId` associated with the new transaction.
-    pub fn start(&mut self, dom_id: wire::DomainId, store: &Store) -> wire::TxId {
+    pub fn start(&mut self, conn: ConnId, store: &Store) -> wire::TxId {
         let next_id = generate_txid(&mut Box::new(thread_rng()), &self.list);
         let changes = ChangeSet::new(store);
 
         self.list.insert(next_id,
                          Transaction {
                              changes: changes,
-                             dom_id: dom_id,
+                             conn: conn,
                          });
         next_id
     }
@@ -88,15 +89,15 @@ impl TransactionList {
     /// # Errors
     ///
     /// * `Error::ENOENT` if the transaction id cannot be found in the list
-    pub fn get(&self, dom_id: wire::DomainId, tx_id: wire::TxId) -> Result<&ChangeSet> {
+    pub fn get(&self, conn: ConnId, tx_id: wire::TxId) -> Result<&ChangeSet> {
         self.list
             .get(&tx_id)
             .ok_or(Error::ENOENT(format!("failed to find transaction {}", tx_id)))
             .and_then(|transaction| {
-                if transaction.dom_id != dom_id {
+                if transaction.conn != conn {
                     Err(Error::ENOENT(format!("failed to find transaction {} for domain {}",
                                               tx_id,
-                                              dom_id)))
+                                              conn.dom_id)))
                 } else {
                     Ok(&transaction.changes)
                 }
@@ -108,19 +109,15 @@ impl TransactionList {
     /// # Errors
     ///
     /// * `Error::ENOENT` if the transaction id cannot be found in the list
-    pub fn put(&mut self,
-               dom_id: wire::DomainId,
-               tx_id: wire::TxId,
-               changes: ChangeSet)
-               -> Result<()> {
+    pub fn put(&mut self, conn: ConnId, tx_id: wire::TxId, changes: ChangeSet) -> Result<()> {
         self.list
             .get_mut(&tx_id)
             .ok_or(Error::ENOENT(format!("failed to find transaction {}", tx_id)))
             .and_then(|transaction| {
-                if transaction.dom_id != dom_id {
+                if transaction.conn != conn {
                     Err(Error::ENOENT(format!("failed to find transaction {} for domain {}",
                                               tx_id,
-                                              dom_id)))
+                                              conn.dom_id)))
                 } else {
                     transaction.changes = changes;
                     Ok(())
@@ -140,7 +137,7 @@ impl TransactionList {
     /// * `Error::ENOENT` if the transaction id cannot be found in the list
     pub fn end(&mut self,
                store: &mut Store,
-               dom_id: wire::DomainId,
+               conn: ConnId,
                tx_id: wire::TxId,
                success: TransactionStatus)
                -> Result<Option<Vec<AppliedChange>>> {
@@ -149,10 +146,10 @@ impl TransactionList {
             .get(&tx_id)
             .ok_or(Error::ENOENT(format!("failed to find transaction {}", tx_id)))
             .and_then(|transaction| {
-                if transaction.dom_id != dom_id {
+                if transaction.conn != conn {
                     Err(Error::ENOENT(format!("failed to find transaction {} for domain {}",
                                               tx_id,
-                                              dom_id)))
+                                              conn.dom_id)))
                 } else {
                     Ok(())
                 }
@@ -162,10 +159,10 @@ impl TransactionList {
             .remove(&tx_id)
             .ok_or(Error::ENOENT(format!("failed to find transaction {}", tx_id)))
             .and_then(|transaction| {
-                if transaction.dom_id != dom_id {
+                if transaction.conn != conn {
                     Err(Error::ENOENT(format!("failed to find transaction {} for domain {}",
                                               tx_id,
-                                              dom_id)))
+                                              conn.dom_id)))
                 } else {
                     Ok(transaction.changes)
                 }
@@ -178,11 +175,11 @@ impl TransactionList {
     }
 
     /// Reset the transactions for a domain.
-    pub fn reset(&mut self, dom_id: wire::DomainId) {
+    pub fn reset(&mut self, conn: ConnId) {
         let tx_ids = self.list
             .iter()
             .filter_map(|(tx_id, txn)| {
-                if txn.dom_id == dom_id {
+                if txn.conn == conn {
                     Some(tx_id)
                 } else {
                     None
@@ -199,10 +196,14 @@ impl TransactionList {
 
 #[cfg(test)]
 mod test {
+    extern crate mio;
+
     use rand::Rng;
+    use self::mio::Token;
     use std::boxed::Box;
     use std::collections::HashMap;
     use std::num::Wrapping;
+    use super::super::connection::ConnId;
     use super::super::error::Error;
     use super::super::path::Path;
     use super::super::store::{Value, DOM0_DOMAIN_ID, Store, ChangeSet};
@@ -244,10 +245,10 @@ mod test {
         let mut txns = TransactionList::new();
 
         // Create a new transaction
-        let tx_id = txns.start(DOM0_DOMAIN_ID, &store);
+        let tx_id = txns.start(ConnId::new(Token(0), DOM0_DOMAIN_ID), &store);
 
         // And verify that it can be retrieved
-        txns.get(DOM0_DOMAIN_ID, tx_id).unwrap();
+        txns.get(ConnId::new(Token(0), DOM0_DOMAIN_ID), tx_id).unwrap();
     }
 
     #[test]
@@ -259,21 +260,21 @@ mod test {
         let mut txns = TransactionList::new();
 
         // Create a new transaction
-        let tx_id = txns.start(DOM0_DOMAIN_ID, &store);
+        let tx_id = txns.start(ConnId::new(Token(0), DOM0_DOMAIN_ID), &store);
 
         // And verify that it can be retrieved
         let changes = {
-            let changes = txns.get(DOM0_DOMAIN_ID, tx_id).unwrap();
+            let changes = txns.get(ConnId::new(Token(0), DOM0_DOMAIN_ID), tx_id).unwrap();
 
             // Write to the transaction
             store.write(&changes, DOM0_DOMAIN_ID, path.clone(), value.clone()).unwrap()
         };
 
         // Store it back in the transaction store
-        txns.put(DOM0_DOMAIN_ID, tx_id, changes).unwrap();
+        txns.put(ConnId::new(Token(0), DOM0_DOMAIN_ID), tx_id, changes).unwrap();
 
         // And verify that it can be retrieved
-        let changes = txns.get(DOM0_DOMAIN_ID, tx_id).unwrap();
+        let changes = txns.get(ConnId::new(Token(0), DOM0_DOMAIN_ID), tx_id).unwrap();
 
         // And we can read the values that we stored in it.
         let v = store.read(&changes, DOM0_DOMAIN_ID, &path).unwrap();
@@ -290,22 +291,22 @@ mod test {
         let mut txns = TransactionList::new();
 
         // Create a new transaction
-        let tx_id = txns.start(DOM0_DOMAIN_ID, &store);
+        let tx_id = txns.start(ConnId::new(Token(0), DOM0_DOMAIN_ID), &store);
 
         // And verify that it can be retrieved
         let changes = {
-            let changes = txns.get(DOM0_DOMAIN_ID, tx_id).unwrap();
+            let changes = txns.get(ConnId::new(Token(0), DOM0_DOMAIN_ID), tx_id).unwrap();
 
             // Write to the transaction
             store.write(&changes, DOM0_DOMAIN_ID, path.clone(), value.clone()).unwrap()
         };
 
         // Store it back in the transaction store
-        txns.put(DOM0_DOMAIN_ID, tx_id, changes).unwrap();
+        txns.put(ConnId::new(Token(0), DOM0_DOMAIN_ID), tx_id, changes).unwrap();
 
         // End the transaction with success
         txns.end(&mut store,
-                 DOM0_DOMAIN_ID,
+                 ConnId::new(Token(0), DOM0_DOMAIN_ID),
                  tx_id,
                  TransactionStatus::Success)
             .unwrap();
@@ -325,22 +326,22 @@ mod test {
         let mut txns = TransactionList::new();
 
         // Create a new transaction
-        let tx_id = txns.start(DOM0_DOMAIN_ID, &store);
+        let tx_id = txns.start(ConnId::new(Token(0), DOM0_DOMAIN_ID), &store);
 
         // And verify that it can be retrieved
         let changes = {
-            let changes = txns.get(DOM0_DOMAIN_ID, tx_id).unwrap();
+            let changes = txns.get(ConnId::new(Token(0), DOM0_DOMAIN_ID), tx_id).unwrap();
 
             // Write to the transaction
             store.write(&changes, DOM0_DOMAIN_ID, path.clone(), value.clone()).unwrap()
         };
 
         // Store it back in the transaction store
-        txns.put(DOM0_DOMAIN_ID, tx_id, changes).unwrap();
+        txns.put(ConnId::new(Token(0), DOM0_DOMAIN_ID), tx_id, changes).unwrap();
 
         // End the transaction with failure
         txns.end(&mut store,
-                 DOM0_DOMAIN_ID,
+                 ConnId::new(Token(0), DOM0_DOMAIN_ID),
                  tx_id,
                  TransactionStatus::Failure)
             .unwrap();
@@ -364,7 +365,7 @@ mod test {
         let mut txns = TransactionList::new();
 
         // Create a new transaction
-        let tx_id = txns.start(DOM0_DOMAIN_ID, &store);
+        let tx_id = txns.start(ConnId::new(Token(0), DOM0_DOMAIN_ID), &store);
 
         // Write to the store
         let changes = store.write(&ChangeSet::new(&store),
@@ -381,7 +382,7 @@ mod test {
 
         // get the transaction we created earlier
         let changes = {
-            let changes = txns.get(DOM0_DOMAIN_ID, tx_id).unwrap();
+            let changes = txns.get(ConnId::new(Token(0), DOM0_DOMAIN_ID), tx_id).unwrap();
 
             // Write to the transaction
             store.write(&changes, DOM0_DOMAIN_ID, path.clone(), value.clone()).unwrap()
@@ -392,11 +393,11 @@ mod test {
         assert_eq!(v, value);
 
         // Store it back in the transaction store
-        txns.put(DOM0_DOMAIN_ID, tx_id, changes).unwrap();
+        txns.put(ConnId::new(Token(0), DOM0_DOMAIN_ID), tx_id, changes).unwrap();
 
         // End the transaction with success
         txns.end(&mut store,
-                 DOM0_DOMAIN_ID,
+                 ConnId::new(Token(0), DOM0_DOMAIN_ID),
                  tx_id,
                  TransactionStatus::Success)
             .unwrap();
@@ -418,16 +419,16 @@ mod test {
         let mut txns = TransactionList::new();
 
         // Create a new transaction
-        let tx_id = txns.start(DOM0_DOMAIN_ID, &store);
+        let tx_id = txns.start(ConnId::new(Token(0), DOM0_DOMAIN_ID), &store);
 
         // And verify that it can be retrieved
         let changes = {
-            match txns.get(1, tx_id) {
+            match txns.get(ConnId::new(Token(1), 1), tx_id) {
                 Ok(_) => assert!(false),
                 Err(_) => assert!(true),
             };
 
-            let changes = txns.get(DOM0_DOMAIN_ID, tx_id).unwrap();
+            let changes = txns.get(ConnId::new(Token(0), DOM0_DOMAIN_ID), tx_id).unwrap();
 
             // Write to the transaction
             store.write(&changes, DOM0_DOMAIN_ID, path.clone(), value.clone()).unwrap()
@@ -435,22 +436,25 @@ mod test {
 
         // Store it back in the transaction store
 
-        match txns.put(1, tx_id, changes.clone()) {
+        match txns.put(ConnId::new(Token(1), 1), tx_id, changes.clone()) {
             Ok(_) => assert!(false),
             Err(_) => assert!(true),
         };
 
-        txns.put(DOM0_DOMAIN_ID, tx_id, changes).unwrap();
+        txns.put(ConnId::new(Token(0), DOM0_DOMAIN_ID), tx_id, changes).unwrap();
 
         // End the transaction with success
 
-        match txns.end(&mut store, 1, tx_id, TransactionStatus::Success) {
+        match txns.end(&mut store,
+                       ConnId::new(Token(1), 1),
+                       tx_id,
+                       TransactionStatus::Success) {
             Ok(_) => assert!(false),
             Err(_) => assert!(true),
         };
 
         txns.end(&mut store,
-                 DOM0_DOMAIN_ID,
+                 ConnId::new(Token(0), DOM0_DOMAIN_ID),
                  tx_id,
                  TransactionStatus::Success)
             .unwrap();
@@ -467,23 +471,23 @@ mod test {
         let mut txns = TransactionList::new();
 
         // Create new transactions
-        let tx_id_dom0_1 = txns.start(DOM0_DOMAIN_ID, &store);
-        let tx_id_dom0_2 = txns.start(DOM0_DOMAIN_ID, &store);
-        let tx_id_dom1_1 = txns.start(1, &store);
-        let tx_id_dom1_2 = txns.start(1, &store);
+        let tx_id_dom0_1 = txns.start(ConnId::new(Token(0), DOM0_DOMAIN_ID), &store);
+        let tx_id_dom0_2 = txns.start(ConnId::new(Token(0), DOM0_DOMAIN_ID), &store);
+        let tx_id_dom1_1 = txns.start(ConnId::new(Token(1), 1), &store);
+        let tx_id_dom1_2 = txns.start(ConnId::new(Token(1), 1), &store);
 
-        txns.reset(DOM0_DOMAIN_ID);
+        txns.reset(ConnId::new(Token(0), DOM0_DOMAIN_ID));
 
-        match txns.get(DOM0_DOMAIN_ID, tx_id_dom0_1) {
+        match txns.get(ConnId::new(Token(0), DOM0_DOMAIN_ID), tx_id_dom0_1) {
             Ok(_) => assert!(false),
             Err(_) => assert!(true),
         }
-        match txns.get(DOM0_DOMAIN_ID, tx_id_dom0_2) {
+        match txns.get(ConnId::new(Token(0), DOM0_DOMAIN_ID), tx_id_dom0_2) {
             Ok(_) => assert!(false),
             Err(_) => assert!(true),
         }
 
-        txns.get(1, tx_id_dom1_1).unwrap();
-        txns.get(1, tx_id_dom1_2).unwrap();
+        txns.get(ConnId::new(Token(1), 1), tx_id_dom1_1).unwrap();
+        txns.get(ConnId::new(Token(1), 1), tx_id_dom1_2).unwrap();
     }
 }

@@ -17,6 +17,7 @@
 **/
 
 use std::collections::HashSet;
+use super::connection::ConnId;
 use super::error::Result;
 use super::transaction::*;
 use super::watch::*;
@@ -39,7 +40,7 @@ impl System {
     }
 
     pub fn do_store_mut<F>(&mut self,
-                           dom_id: wire::DomainId,
+                           conn: ConnId,
                            tx_id: wire::TxId,
                            thunk: F)
                            -> Result<HashSet<Watch>>
@@ -52,7 +53,7 @@ impl System {
                 // return a root changeset
                 ROOT_TRANSACTION => &root_changeset,
                 // otherwise, look up the transaction ID and return that instead
-                _ => try!(self.txns.get(dom_id, tx_id)),
+                _ => try!(self.txns.get(conn, tx_id)),
             };
 
             // Once we have a changeset, apply the thunk to the data store and
@@ -71,14 +72,14 @@ impl System {
             // otherwise
             _ => {
                 // just store the changes back with the transaction id
-                try!(self.txns.put(dom_id, tx_id, changes));
+                try!(self.txns.put(conn, tx_id, changes));
                 // and return no watches
                 HashSet::new()
             }
         })
     }
 
-    pub fn do_store<F, R>(&self, dom_id: wire::DomainId, tx_id: wire::TxId, thunk: F) -> Result<R>
+    pub fn do_store<F, R>(&self, conn: ConnId, tx_id: wire::TxId, thunk: F) -> Result<R>
         where F: FnOnce(&Store, &ChangeSet) -> Result<R>
     {
         let root_changeset = ChangeSet::new(&self.store);
@@ -87,7 +88,7 @@ impl System {
             // return a root changeset
             ROOT_TRANSACTION => &root_changeset,
             // otherwise, look up the transaction ID and return that instead
-            _ => try!(self.txns.get(dom_id, tx_id)),
+            _ => try!(self.txns.get(conn, tx_id)),
         };
 
         // Once we have a changeset, apply the thunk to the data store and
@@ -112,6 +113,10 @@ impl System {
 
 #[cfg(test)]
 mod test {
+    extern crate mio;
+
+    use self::mio::Token;
+    use super::super::connection::ConnId;
     use super::super::path;
     use super::super::store;
     use super::super::transaction;
@@ -129,27 +134,33 @@ mod test {
 
         // set up a watch
         system.do_watch_mut(|watch_list| {
-                watch_list.watch(store::DOM0_DOMAIN_ID,
+                watch_list.watch(ConnId::new(Token(0), store::DOM0_DOMAIN_ID),
                                  watch::WPath::Normal(path.clone()),
                                  watch::WPath::Normal(path.clone()))
             })
             .unwrap();
 
         // create a transaction
-        let tx_id =
-            system.do_transaction_mut(|txlst, store| txlst.start(store::DOM0_DOMAIN_ID, store));
+        let tx_id = system.do_transaction_mut(|txlst, store| {
+            txlst.start(ConnId::new(Token(0), store::DOM0_DOMAIN_ID), store)
+        });
 
         // add the value in the transaction
-        let fired_watches = system.do_store_mut(store::DOM0_DOMAIN_ID, tx_id, |store, changes| {
-                store.write(changes, store::DOM0_DOMAIN_ID, path.clone(), value.clone())
-            })
+        let fired_watches = system.do_store_mut(ConnId::new(Token(0), store::DOM0_DOMAIN_ID),
+                          tx_id,
+                          |store, changes| {
+                              store.write(changes,
+                                          store::DOM0_DOMAIN_ID,
+                                          path.clone(),
+                                          value.clone())
+                          })
             .unwrap();
         assert_eq!(fired_watches.len(), 0);
 
         // end the transaction
         let changes = system.do_transaction_mut(|txlst, store| {
                 txlst.end(store,
-                          store::DOM0_DOMAIN_ID,
+                          ConnId::new(Token(0), store::DOM0_DOMAIN_ID),
                           tx_id,
                           transaction::TransactionStatus::Success)
             })
