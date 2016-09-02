@@ -103,7 +103,7 @@ impl Server {
                         error!("Failed to register {:?} connection with event loop: {:?}",
                                token,
                                e);
-                        conn.close();
+                        conn.close(&mut self.system.borrow_mut());
                     }
                 }
             }
@@ -148,7 +148,7 @@ impl mio::Handler for Server {
                 let is_closed = {
                     let ref conn_ = self.find_conn_by_token(token);
                     let mut conn = conn_.borrow_mut();
-                    conn.ready(event_loop, events, self.system.borrow_mut());
+                    conn.ready(event_loop, events, &mut self.system.borrow_mut());
                     conn.is_closed()
                 };
 
@@ -167,7 +167,9 @@ impl mio::Handler for Server {
             let ref conn_ = self.find_conn_by_token(watch.conn.token);
             let mut conn = conn_.borrow_mut();
             debug!("watch: {:?}", watch);
-            conn.enqueue(Box::new(egress::WatchEvent::new(watch)), event_loop)
+            conn.enqueue(Box::new(egress::WatchEvent::new(watch)),
+                         event_loop,
+                         &mut self.system.borrow_mut())
         }
     }
 }
@@ -196,7 +198,10 @@ impl Connection {
         }
     }
 
-    fn enqueue(&mut self, msg: Box<egress::Egress>, event_loop: &mut mio::EventLoop<Server>) {
+    fn enqueue(&mut self,
+               msg: Box<egress::Egress>,
+               event_loop: &mut mio::EventLoop<Server>,
+               system: &mut RefMut<System>) {
         let (hdr, body) = msg.encode();
         self.tx_q.push_back(Buffer::new(hdr.to_vec()));
         self.tx_q.push_back(Buffer::new(body.to_vec()));
@@ -205,7 +210,7 @@ impl Connection {
             self.state = State::transition_write();
             if let Err(_) = self.reregister(event_loop) {
                 // if we couldn't reregister shut 'er down
-                self.close();
+                self.close(system);
             }
         }
     }
@@ -213,7 +218,7 @@ impl Connection {
     fn ready(&mut self,
              event_loop: &mut mio::EventLoop<Server>,
              events: mio::EventSet,
-             system: RefMut<System>) {
+             system: &mut RefMut<System>) {
 
         debug!("CONN: {:?}. EVENTS: {:?} STATE: {:?}",
                self.conn.token,
@@ -222,14 +227,14 @@ impl Connection {
 
         if events.is_error() {
             debug!("CONN: {:?} unexpected connection error", self.conn.token);
-            self.close();
+            self.close(system);
             return;
         }
 
         if events.is_hup() {
             debug!("CONN: {:?} connection was closed by remote",
                    self.conn.token);
-            self.close();
+            self.close(system);
             return;
         }
 
@@ -256,12 +261,12 @@ impl Connection {
             // if we processed this and there was an error shut 'er down
             Err(e) => {
                 error!("CONN: {:?} failed read|write: {:?}", self.conn.token, e);
-                self.close();
+                self.close(system);
             }
             Ok(_) => {
                 if let Err(_) = self.reregister(event_loop) {
                     // if we couldn't reregister shut 'er down
-                    self.close();
+                    self.close(system);
                 }
             }
         }
@@ -318,7 +323,7 @@ impl Connection {
 
     /// Handle read events for the connection from the event loop
     fn read(&mut self,
-            system: RefMut<System>,
+            system: &mut RefMut<System>,
             event_loop: &mut mio::EventLoop<Server>)
             -> io::Result<()> {
         let conn = self.conn;
@@ -351,7 +356,7 @@ impl Connection {
 
             // enqueue outgoing tx messages onto our tx queue
             if let Some(tx) = tx {
-                self.enqueue(tx.msg, event_loop);
+                self.enqueue(tx.msg, event_loop, system);
                 if let Some(watch_events) = tx.watch_events {
                     let sender = event_loop.channel();
                     let _ = sender.send(watch_events);
@@ -430,9 +435,11 @@ impl Connection {
     }
 
     /// Close this connection
-    fn close(&mut self) {
+    fn close(&mut self, system: &mut RefMut<System>) {
         debug!("CONN: {:?} closed", self.conn.token);
-        self.state = State::Closed
+        self.state = State::Closed;
+        let _ = system.do_watch_mut(|watches| watches.reset(self.conn));
+        let _ = system.do_transaction_mut(|txns, _| txns.reset(self.conn));
     }
 
     /// Reports if this connection is closed

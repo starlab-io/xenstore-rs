@@ -61,12 +61,12 @@ impl Response {
 }
 
 pub trait ProcessMessage {
-    fn process(&self, RefMut<system::System>) -> Response;
+    fn process(&self, &mut RefMut<system::System>) -> Response;
 }
 
 /// process an incoming directory request
 impl ProcessMessage for ingress::Directory {
-    fn process(&self, sys: RefMut<system::System>) -> Response {
+    fn process(&self, sys: &mut RefMut<system::System>) -> Response {
         sys.do_store(self.md.conn,
                       self.md.tx_id,
                       |store, changes| store.directory(changes, self.md.conn.dom_id, &self.path))
@@ -82,7 +82,7 @@ impl ProcessMessage for ingress::Directory {
 
 /// process an incoming read request
 impl ProcessMessage for ingress::Read {
-    fn process(&self, sys: RefMut<system::System>) -> Response {
+    fn process(&self, sys: &mut RefMut<system::System>) -> Response {
         sys.do_store(self.md.conn,
                       self.md.tx_id,
                       |store, changes| store.read(changes, self.md.conn.dom_id, &self.path))
@@ -98,7 +98,7 @@ impl ProcessMessage for ingress::Read {
 
 /// process an incoming get permissions request
 impl ProcessMessage for ingress::GetPerms {
-    fn process(&self, sys: RefMut<system::System>) -> Response {
+    fn process(&self, sys: &mut RefMut<system::System>) -> Response {
         sys.do_store(self.md.conn,
                       self.md.tx_id,
                       |store, changes| store.get_perms(changes, self.md.conn.dom_id, &self.path))
@@ -114,7 +114,7 @@ impl ProcessMessage for ingress::GetPerms {
 
 /// process an incoming make directory request
 impl ProcessMessage for ingress::Mkdir {
-    fn process(&self, sys: RefMut<system::System>) -> Response {
+    fn process(&self, sys: &mut RefMut<system::System>) -> Response {
         let mut sys = sys;
         sys.do_store_mut(self.md.conn, self.md.tx_id, |store, changes| {
                 store.mkdir(changes, self.md.conn.dom_id, self.path.clone())
@@ -128,7 +128,7 @@ impl ProcessMessage for ingress::Mkdir {
 
 /// process an incoming remove request
 impl ProcessMessage for ingress::Remove {
-    fn process(&self, sys: RefMut<system::System>) -> Response {
+    fn process(&self, sys: &mut RefMut<system::System>) -> Response {
         let mut sys = sys;
         sys.do_store_mut(self.md.conn,
                           self.md.tx_id,
@@ -142,7 +142,7 @@ impl ProcessMessage for ingress::Remove {
 
 /// process an incoming watch request
 impl ProcessMessage for ingress::Watch {
-    fn process(&self, sys: RefMut<system::System>) -> Response {
+    fn process(&self, sys: &mut RefMut<system::System>) -> Response {
         let mut sys = sys;
         sys.do_watch_mut(|watches| {
                 watches.watch(self.md.conn, self.node.clone(), self.token.clone())
@@ -154,7 +154,7 @@ impl ProcessMessage for ingress::Watch {
 
 /// process an incoming unwatch request
 impl ProcessMessage for ingress::Unwatch {
-    fn process(&self, sys: RefMut<system::System>) -> Response {
+    fn process(&self, sys: &mut RefMut<system::System>) -> Response {
         let mut sys = sys;
         sys.do_watch_mut(|watches| {
                 watches.unwatch(self.md.conn, self.node.clone(), self.token.clone())
@@ -166,7 +166,7 @@ impl ProcessMessage for ingress::Unwatch {
 
 /// process an incoming transaction start request
 impl ProcessMessage for ingress::TransactionStart {
-    fn process(&self, sys: RefMut<system::System>) -> Response {
+    fn process(&self, sys: &mut RefMut<system::System>) -> Response {
         let mut sys = sys;
         let tx_id = sys.do_transaction_mut(|txns, store| txns.start(self.md.conn, &store));
         Response::new(Box::new(egress::TransactionStart {
@@ -178,7 +178,7 @@ impl ProcessMessage for ingress::TransactionStart {
 
 /// process an incoming transaction end request
 impl ProcessMessage for ingress::TransactionEnd {
-    fn process(&self, sys: RefMut<system::System>) -> Response {
+    fn process(&self, sys: &mut RefMut<system::System>) -> Response {
         let mut sys = sys;
         let complete = if self.value {
             transaction::TransactionStatus::Success
@@ -200,14 +200,14 @@ impl ProcessMessage for ingress::TransactionEnd {
 
 /// process an incoming release request
 impl ProcessMessage for ingress::Release {
-    fn process(&self, _: RefMut<system::System>) -> Response {
+    fn process(&self, _: &mut RefMut<system::System>) -> Response {
         Response::new(Box::new(egress::Release { md: self.md }))
     }
 }
 
 /// process an incoming get domain path request
 impl ProcessMessage for ingress::GetDomainPath {
-    fn process(&self, _: RefMut<system::System>) -> Response {
+    fn process(&self, _: &mut RefMut<system::System>) -> Response {
         Response::new(Box::new(egress::GetDomainPath {
             md: self.md,
             path: path::get_domain_path(self.md.conn.dom_id),
@@ -217,28 +217,28 @@ impl ProcessMessage for ingress::GetDomainPath {
 
 /// process an incoming resume request
 impl ProcessMessage for ingress::Resume {
-    fn process(&self, _: RefMut<system::System>) -> Response {
+    fn process(&self, _: &mut RefMut<system::System>) -> Response {
         Response::new(Box::new(egress::Resume { md: self.md }))
     }
 }
 
 /// process an incoming restrict request
 impl ProcessMessage for ingress::Restrict {
-    fn process(&self, _: RefMut<system::System>) -> Response {
+    fn process(&self, _: &mut RefMut<system::System>) -> Response {
         Response::new(Box::new(egress::Restrict { md: self.md }))
     }
 }
 
 /// process an error that occurred while parsing
 impl ProcessMessage for ingress::ErrorMsg {
-    fn process(&self, _: RefMut<system::System>) -> Response {
+    fn process(&self, _: &mut RefMut<system::System>) -> Response {
         Response::new(Box::new(egress::ErrorMsg::from(self.md, &self.err)))
     }
 }
 
 /// process an incoming write request
 impl ProcessMessage for ingress::Write {
-    fn process(&self, sys: RefMut<system::System>) -> Response {
+    fn process(&self, sys: &mut RefMut<system::System>) -> Response {
         let mut sys = sys;
         sys.do_store_mut(self.md.conn, self.md.tx_id, |store, changes| {
                 store.write(changes,
@@ -256,7 +256,7 @@ impl ProcessMessage for ingress::Write {
 
 /// process an incoming set_perms request
 impl ProcessMessage for ingress::SetPerms {
-    fn process(&self, sys: RefMut<system::System>) -> Response {
+    fn process(&self, sys: &mut RefMut<system::System>) -> Response {
         let perms = self.rest
             .iter()
             .map(|s| {
