@@ -26,10 +26,11 @@ use self::mio::{TryRead, TryWrite};
 use self::mio::unix::{UnixListener, UnixStream};
 use self::mio::util::Slab;
 use std::cell::{RefCell, RefMut};
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::io;
 use store;
 use system::System;
+use watch::Watch;
 use wire;
 
 const SERVER: mio::Token = mio::Token(0);
@@ -126,7 +127,7 @@ impl Server {
 
 impl mio::Handler for Server {
     type Timeout = ();
-    type Message = ();
+    type Message = HashSet<Watch>;
 
     fn ready(&mut self,
              event_loop: &mut mio::EventLoop<Server>,
@@ -158,6 +159,17 @@ impl mio::Handler for Server {
             }
         }
     }
+
+    fn notify(&mut self, event_loop: &mut mio::EventLoop<Server>, msg: HashSet<Watch>) {
+        let mut msg = msg;
+
+        for watch in msg.drain() {
+            let ref conn_ = self.find_conn_by_token(watch.conn.token);
+            let mut conn = conn_.borrow_mut();
+            debug!("watch: {:?}", watch);
+            conn.enqueue(Box::new(egress::WatchEvent::new(watch)), event_loop)
+        }
+    }
 }
 
 type Buffer = io::Cursor<Vec<u8>>;
@@ -184,10 +196,18 @@ impl Connection {
         }
     }
 
-    fn enqueue(&mut self, msg: Box<egress::Egress>) {
+    fn enqueue(&mut self, msg: Box<egress::Egress>, event_loop: &mut mio::EventLoop<Server>) {
         let (hdr, body) = msg.encode();
         self.tx_q.push_back(Buffer::new(hdr.to_vec()));
         self.tx_q.push_back(Buffer::new(body.to_vec()));
+
+        if let State::AwaitingHeader(..) = self.state {
+            self.state = State::transition_write();
+            if let Err(_) = self.reregister(event_loop) {
+                // if we couldn't reregister shut 'er down
+                self.close();
+            }
+        }
     }
 
     fn ready(&mut self,
@@ -220,7 +240,7 @@ impl Connection {
                         "CONN: {:?} unexpected events: {:?}",
                         self.conn.token,
                         events);
-                self.read(system)
+                self.read(system, event_loop)
             }
             State::Write => {
                 assert!(events.is_writable(),
@@ -297,7 +317,10 @@ impl Connection {
 
 
     /// Handle read events for the connection from the event loop
-    fn read(&mut self, system: RefMut<System>) -> io::Result<()> {
+    fn read(&mut self,
+            system: RefMut<System>,
+            event_loop: &mut mio::EventLoop<Server>)
+            -> io::Result<()> {
         let conn = self.conn;
 
         let new_state = match self.state {
@@ -327,9 +350,12 @@ impl Connection {
             self.state = new_state;
 
             // enqueue outgoing tx messages onto our tx queue
-            match tx {
-                Some(msg) => self.enqueue(msg.msg),
-                None => (),
+            if let Some(tx) = tx {
+                self.enqueue(tx.msg, event_loop);
+                if let Some(watch_events) = tx.watch_events {
+                    let sender = event_loop.channel();
+                    let _ = sender.send(watch_events);
+                }
             }
         }
 
