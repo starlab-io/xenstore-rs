@@ -1,6 +1,8 @@
 [package]
 name = "xenstore"
-version = "0.1.0"
+description = "An implementation of the information storage space daemon for Xen"
+license = "GPL-2.0"
+version = "0.0.0"
 authors = ["Jonathan Creekmore <jonathan.creekmore@starlab.io>",
             "Doug Goldstein <doug@starlab.io>"]
 
