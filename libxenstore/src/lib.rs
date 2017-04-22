@@ -17,11 +17,6 @@
 **/
 
 extern crate byteorder;
-#[macro_use]
-extern crate bitflags;
-
-#[macro_use]
-extern crate lazy_static;
 
 #[macro_use]
 extern crate log;

@@ -1,0 +1,13 @@
+[package]
+name = "rxenstored"
+version = "0.1.0"
+authors = ["Doug Goldstein <cardoe@cardoe.com>"]
+
+[dependencies]
+docopt = "^0.6"
+libxenstore = { path = "../libxenstore" }
+log = "^0.3"
+mio = "0.5.1"
+nix = "0.6.0"
+rustc-serialize = "^0.3"
+stderrlog = "^0.2.1"

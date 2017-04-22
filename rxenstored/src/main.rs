@@ -17,23 +17,23 @@
 **/
 
 extern crate docopt;
+extern crate libxenstore;
 #[macro_use]
 extern crate log;
 extern crate mio;
 extern crate nix;
 extern crate rustc_serialize;
 extern crate stderrlog;
-extern crate xenstore;
 
+use libxenstore::server::*;
+use libxenstore::store;
+use libxenstore::system;
+use libxenstore::transaction;
+use libxenstore::watch;
 use mio::unix::UnixListener;
 use nix::sys::signal::{self, sigaction, SigAction, SigHandler, SaFlags, SigSet};
 use std::fs::{DirBuilder, remove_file};
 use std::path::PathBuf;
-use xenstore::server::*;
-use xenstore::store;
-use xenstore::system;
-use xenstore::transaction;
-use xenstore::watch;
 
 const UDS_PATH: &'static str = "/var/run/xenstored/socket";
 

@@ -17,7 +17,11 @@ format:
 build:x86:
     stage: build
     script:
-        - cargo build
+        - pushd libxenstore
+        - cargo build --verbose
+        - popd
+        - pushd rxenstored
+        - cargo build --verbose
 
 build:aarch64:
     stage: build
@@ -25,6 +29,10 @@ build:aarch64:
         - export CC=aarch64-linux-gnu-gcc
         - export AR=aarch64-linux-gnu-ar
         - export ARCH=arm64
+        - pushd libxenstore
+        - cargo build --verbose --target=aarch64-unknown-linux-gnu
+        - popd
+        - pushd rxenstored
         - cargo build --verbose --target=aarch64-unknown-linux-gnu
 
 build:armhf:
@@ -33,9 +41,17 @@ build:armhf:
         - export CC=arm-linux-gnueabihf-gcc
         - export AR=arm-linux-gnueabihf-ar
         - export ARCH=arm
+        - pushd libxenstore
+        - cargo build --verbose --target=arm-unknown-linux-gnueabihf
+        - popd
+        - pushd rxenstored
         - cargo build --verbose --target=arm-unknown-linux-gnueabihf
 
 test:x86:
     stage: test
     script:
+        - pushd libxenstore
+        - cargo test
+        - popd
+        - pushd rxenstored
         - cargo test
