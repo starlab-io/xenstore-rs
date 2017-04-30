@@ -193,11 +193,11 @@ impl Store {
 
         let applied = changes.iter()
             .map(|(path, change)| match change {
-                &Change::Write(ref node) => {
-                    AppliedChange::Write(path.clone(), node.permissions.clone())
-                }
-                &Change::Remove(_) => AppliedChange::Remove(path.clone()),
-            })
+                     &Change::Write(ref node) => {
+                         AppliedChange::Write(path.clone(), node.permissions.clone())
+                     }
+                     &Change::Remove(_) => AppliedChange::Remove(path.clone()),
+                 })
             .collect::<Vec<AppliedChange>>();
 
 
@@ -220,19 +220,16 @@ impl Store {
                     }
                 }
             } else {
-                self.store
-                    .get(path)
-                    .ok_or(Error::ENOENT(format!("failed to lookup {:?}", path)))
+                self.store.get(path).ok_or(Error::ENOENT(format!("failed to lookup {:?}", path)))
             }
         };
 
-        node.and_then(|node| {
-            if !node.perms_ok(dom_id, perm) {
-                Err(Error::EACCES(format!("failed to verify permissions for {:?}", node.path)))
-            } else {
-                Ok(node)
-            }
-        })
+        node.and_then(|node| if !node.perms_ok(dom_id, perm) {
+                          Err(Error::EACCES(format!("failed to verify permissions for {:?}",
+                                                    node.path)))
+                      } else {
+                          Ok(node)
+                      })
     }
 
     /// Construct a new node
@@ -247,12 +244,10 @@ impl Store {
         // Get a list of paths that need to be created
         let paths_to_create = path.clone()
             .into_iter()
-            .take_while(|ref path| {
-                match self.get_node(change_set, dom_id, path, Perm::Write) {
-                    Err(Error::ENOENT(_)) => true,
-                    _ => false,
-                }
-            })
+            .take_while(|ref path| match self.get_node(change_set, dom_id, path, Perm::Write) {
+                            Err(Error::ENOENT(_)) => true,
+                            _ => false,
+                        })
             .collect::<LinkedList<Path>>();
 
         // If we are trying to construct a node and cannot, it is due to access restritions
@@ -320,8 +315,7 @@ impl Store {
                  value: Value)
                  -> Result<ChangeSet> {
         let node = {
-            self.get_node(change_set, dom_id, &path, Perm::Write)
-                .map(|n| n.clone())
+            self.get_node(change_set, dom_id, &path, Perm::Write).map(|n| n.clone())
         };
 
         let mut changes = change_set.clone();
@@ -352,8 +346,7 @@ impl Store {
                 dom_id: wire::DomainId,
                 path: &Path)
                 -> Result<Value> {
-        self.get_node(change_set, dom_id, path, Perm::Read)
-            .map(|node| node.value.clone())
+        self.get_node(change_set, dom_id, path, Perm::Read).map(|node| node.value.clone())
     }
 
     /// Make a new directory `Path` inside of the current transaction.
@@ -389,15 +382,14 @@ impl Store {
                      dom_id: wire::DomainId,
                      path: &Path)
                      -> Result<Vec<Basename>> {
-        self.get_node(change_set, dom_id, path, Perm::Read)
-            .map(|node| {
-                let mut subdirs = node.children
-                    .iter()
-                    .map(|s| s.to_owned())
-                    .collect::<Vec<Basename>>();
-                subdirs.sort();
-                subdirs
-            })
+        self.get_node(change_set, dom_id, path, Perm::Read).map(|node| {
+            let mut subdirs = node.children
+                .iter()
+                .map(|s| s.to_owned())
+                .collect::<Vec<Basename>>();
+            subdirs.sort();
+            subdirs
+        })
     }
 
     /// Remove an entry and its children from `Path` inside the current transaction.
@@ -421,11 +413,11 @@ impl Store {
 
         // need to remove entry from the parent first
         let parent_node = try!(self.get_node(&changes, dom_id, &parent, Perm::Write)
-            .map(|node| {
-                let mut children = node.children.clone();
-                children.remove(&basename);
-                Node { children: children, ..node.clone() }
-            }));
+                                   .map(|node| {
+                                            let mut children = node.children.clone();
+                                            children.remove(&basename);
+                                            Node { children: children, ..node.clone() }
+                                        }));
         changes.insert(Change::Write(parent_node));
 
         let mut remove = LinkedList::new();
@@ -460,8 +452,7 @@ impl Store {
                      dom_id: wire::DomainId,
                      path: &Path)
                      -> Result<Vec<Permission>> {
-        self.get_node(change_set, dom_id, path, Perm::Read)
-            .map(|node| node.permissions.clone())
+        self.get_node(change_set, dom_id, path, Perm::Read).map(|node| node.permissions.clone())
     }
 
     /// Set the permissions for a node.
@@ -476,8 +467,7 @@ impl Store {
                      permissions: Vec<Permission>)
                      -> Result<ChangeSet> {
         let node = {
-            try!(self.get_node(change_set, dom_id, path, Perm::Write)
-                .map(|node| node.clone()))
+            try!(self.get_node(change_set, dom_id, path, Perm::Write).map(|node| node.clone()))
         };
 
         let mut changes = change_set.clone();
@@ -500,9 +490,9 @@ mod test {
         let value = Value::from("value");
 
         let changes = store.write(&ChangeSet::new(&store),
-                   DOM0_DOMAIN_ID,
-                   path.clone(),
-                   value.clone())
+                                  DOM0_DOMAIN_ID,
+                                  path.clone(),
+                                  value.clone())
             .unwrap();
 
         assert_eq!(changes.changes.contains_key(&path), true);
@@ -520,13 +510,12 @@ mod test {
         let value = Value::from("value");
 
         let changes = store.write(&ChangeSet::new(&store),
-                   DOM0_DOMAIN_ID,
-                   path.clone(),
-                   value.clone())
+                                  DOM0_DOMAIN_ID,
+                                  path.clone(),
+                                  value.clone())
             .unwrap();
 
-        let read = store.read(&changes, DOM0_DOMAIN_ID, &path)
-            .unwrap();
+        let read = store.read(&changes, DOM0_DOMAIN_ID, &path).unwrap();
 
         assert_eq!(read, value);
     }
@@ -538,17 +527,15 @@ mod test {
         let value = Value::from("value");
 
         let changes = store.write(&ChangeSet::new(&store),
-                   DOM0_DOMAIN_ID,
-                   path.clone(),
-                   value.clone())
+                                  DOM0_DOMAIN_ID,
+                                  path.clone(),
+                                  value.clone())
             .unwrap();
 
-        store.apply(changes)
-            .unwrap();
+        store.apply(changes).unwrap();
         assert_eq!(store.generation, Wrapping(1));
 
-        let read = store.read(&ChangeSet::new(&store), DOM0_DOMAIN_ID, &path)
-            .unwrap();
+        let read = store.read(&ChangeSet::new(&store), DOM0_DOMAIN_ID, &path).unwrap();
 
         assert_eq!(read, value);
     }
@@ -561,18 +548,16 @@ mod test {
         let value = Value::from("value");
 
         let changes = store.write(&ChangeSet::new(&store),
-                   DOM0_DOMAIN_ID,
-                   path.clone(),
-                   value.clone())
+                                  DOM0_DOMAIN_ID,
+                                  path.clone(),
+                                  value.clone())
             .unwrap();
 
-        let read = store.read(&changes, DOM0_DOMAIN_ID, &path)
-            .unwrap();
+        let read = store.read(&changes, DOM0_DOMAIN_ID, &path).unwrap();
 
         assert_eq!(read, value);
 
-        let read_parent = store.read(&changes, DOM0_DOMAIN_ID, &parent)
-            .unwrap();
+        let read_parent = store.read(&changes, DOM0_DOMAIN_ID, &parent).unwrap();
 
         assert_eq!(read_parent, "");
     }
@@ -582,12 +567,10 @@ mod test {
         let store = Store::new();
         let path = Path::try_from(DOM0_DOMAIN_ID, "/basic").unwrap();
 
-        let changes = store.mkdir(&ChangeSet::new(&store), DOM0_DOMAIN_ID, path.clone())
-            .unwrap();
+        let changes = store.mkdir(&ChangeSet::new(&store), DOM0_DOMAIN_ID, path.clone()).unwrap();
 
         // verify the path was created
-        let read = store.read(&changes, DOM0_DOMAIN_ID, &path)
-            .unwrap();
+        let read = store.read(&changes, DOM0_DOMAIN_ID, &path).unwrap();
         assert_eq!(read, "");
     }
 
@@ -597,17 +580,14 @@ mod test {
         let path = Path::try_from(DOM0_DOMAIN_ID, "/basic/path").unwrap();
         let parent = path.parent().unwrap();
 
-        let changes = store.mkdir(&ChangeSet::new(&store), DOM0_DOMAIN_ID, path.clone())
-            .unwrap();
+        let changes = store.mkdir(&ChangeSet::new(&store), DOM0_DOMAIN_ID, path.clone()).unwrap();
 
         // verify the parent directory was created
-        let read = store.read(&changes, DOM0_DOMAIN_ID, &parent)
-            .unwrap();
+        let read = store.read(&changes, DOM0_DOMAIN_ID, &parent).unwrap();
         assert_eq!(read, "");
 
         // verify the path was created
-        let read = store.read(&changes, DOM0_DOMAIN_ID, &path)
-            .unwrap();
+        let read = store.read(&changes, DOM0_DOMAIN_ID, &path).unwrap();
         assert_eq!(read, "");
     }
 
@@ -620,12 +600,10 @@ mod test {
 
         let mut changes = store.mkdir(&ChangeSet::new(&store), DOM0_DOMAIN_ID, path1.clone())
             .unwrap();
-        changes = store.mkdir(&changes, DOM0_DOMAIN_ID, path2.clone())
-            .unwrap();
+        changes = store.mkdir(&changes, DOM0_DOMAIN_ID, path2.clone()).unwrap();
 
         // grab a list of all subdirectories
-        let subdirs = store.directory(&changes, DOM0_DOMAIN_ID, &parent)
-            .unwrap();
+        let subdirs = store.directory(&changes, DOM0_DOMAIN_ID, &parent).unwrap();
         assert_eq!(subdirs,
                    vec![Basename::from("path1"), Basename::from("path2")]);
     }
@@ -636,15 +614,12 @@ mod test {
 
         let path1 = Path::try_from(DOM0_DOMAIN_ID, "/basic/path1").unwrap();
         let path2 = Path::try_from(DOM0_DOMAIN_ID, "/basic/path2").unwrap();
-        let basic = path1.parent()
-            .unwrap();
+        let basic = path1.parent().unwrap();
         let mut changes = store.mkdir(&ChangeSet::new(&store), DOM0_DOMAIN_ID, path1.clone())
             .unwrap();
-        changes = store.mkdir(&changes, DOM0_DOMAIN_ID, path2.clone())
-            .unwrap();
+        changes = store.mkdir(&changes, DOM0_DOMAIN_ID, path2.clone()).unwrap();
 
-        changes = store.rm(&changes, DOM0_DOMAIN_ID, &basic)
-            .unwrap();
+        changes = store.rm(&changes, DOM0_DOMAIN_ID, &basic).unwrap();
 
         // verify the parent directory was removed
         match store.read(&changes, DOM0_DOMAIN_ID, &basic) {
@@ -669,8 +644,8 @@ mod test {
 
         // verify the root still exists
         let read = store.read(&changes,
-                  DOM0_DOMAIN_ID,
-                  &Path::try_from(DOM0_DOMAIN_ID, "/").unwrap())
+                              DOM0_DOMAIN_ID,
+                              &Path::try_from(DOM0_DOMAIN_ID, "/").unwrap())
             .unwrap();
         assert_eq!(read, "");
     }
@@ -681,8 +656,7 @@ mod test {
 
         let path1 = Path::try_from(DOM0_DOMAIN_ID, "/basic/path1").unwrap();
 
-        let changes = store.mkdir(&ChangeSet::new(&store), DOM0_DOMAIN_ID, path1.clone())
-            .unwrap();
+        let changes = store.mkdir(&ChangeSet::new(&store), DOM0_DOMAIN_ID, path1.clone()).unwrap();
 
         let rslt = store.rm(&changes,
                             DOM0_DOMAIN_ID,
@@ -702,16 +676,13 @@ mod test {
         // Create the global state
         let path1 = Path::try_from(DOM0_DOMAIN_ID, "/basic/path1").unwrap();
         let path2 = Path::try_from(DOM0_DOMAIN_ID, "/basic/path2").unwrap();
-        let basic = path1.parent()
-            .unwrap();
+        let basic = path1.parent().unwrap();
 
         let mut changes = store.mkdir(&ChangeSet::new(&store), DOM0_DOMAIN_ID, path1.clone())
             .unwrap();
-        changes = store.mkdir(&changes, DOM0_DOMAIN_ID, path2.clone())
-            .unwrap();
+        changes = store.mkdir(&changes, DOM0_DOMAIN_ID, path2.clone()).unwrap();
 
-        changes = store.rm(&changes, DOM0_DOMAIN_ID, &path1)
-            .unwrap();
+        changes = store.rm(&changes, DOM0_DOMAIN_ID, &path1).unwrap();
 
         // verify the path1 directory was removed
         match store.read(&changes, DOM0_DOMAIN_ID, &path1) {
@@ -728,8 +699,8 @@ mod test {
     fn get_root_permissions() {
         let store = Store::new();
         let permissions = store.get_perms(&ChangeSet::new(&store),
-                       DOM0_DOMAIN_ID,
-                       &Path::try_from(DOM0_DOMAIN_ID, "/").unwrap())
+                                          DOM0_DOMAIN_ID,
+                                          &Path::try_from(DOM0_DOMAIN_ID, "/").unwrap())
             .unwrap();
 
         assert_eq!(permissions,
@@ -744,23 +715,22 @@ mod test {
         let store = Store::new();
 
         let mut changes = store.mkdir(&ChangeSet::new(&store),
-                   DOM0_DOMAIN_ID,
-                   Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap())
+                                      DOM0_DOMAIN_ID,
+                                      Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap())
             .unwrap();
 
         changes = store.set_perms(&changes,
-                       DOM0_DOMAIN_ID,
-                       &Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap(),
-                       vec![Permission {
-                                id: 1,
-                                perm: Perm::None,
-                            }])
+                                  DOM0_DOMAIN_ID,
+                                  &Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap(),
+                                  vec![Permission {
+                                           id: 1,
+                                           perm: Perm::None,
+                                       }])
             .unwrap();
 
         let path = Path::try_from(1, "foo").unwrap();
         let value = Value::from("value");
-        store.write(&changes, 1, path.clone(), value.clone())
-            .unwrap();
+        store.write(&changes, 1, path.clone(), value.clone()).unwrap();
     }
 
     #[test]
@@ -771,22 +741,18 @@ mod test {
         let mut changes = store.mkdir(&ChangeSet::new(&store), DOM0_DOMAIN_ID, path.clone())
             .unwrap();
 
-        let perms = vec![
-            Permission {
-                id: 1,
-                perm: Perm::None,
-            },
-            Permission {
-                id: 2,
-                perm: Perm::Read,
-            },
-        ];
+        let perms = vec![Permission {
+                             id: 1,
+                             perm: Perm::None,
+                         },
+                         Permission {
+                             id: 2,
+                             perm: Perm::Read,
+                         }];
 
-        changes = store.set_perms(&changes, DOM0_DOMAIN_ID, &path, perms.clone())
-            .unwrap();
+        changes = store.set_perms(&changes, DOM0_DOMAIN_ID, &path, perms.clone()).unwrap();
 
-        let read = store.get_perms(&changes, DOM0_DOMAIN_ID, &path)
-            .unwrap();
+        let read = store.get_perms(&changes, DOM0_DOMAIN_ID, &path).unwrap();
 
         assert_eq!(perms, read);
     }
@@ -799,26 +765,21 @@ mod test {
         let mut changes = store.mkdir(&ChangeSet::new(&store), DOM0_DOMAIN_ID, path.clone())
             .unwrap();
 
-        let perms = vec![
-            Permission {
-                id: 1,
-                perm: Perm::None,
-            },
-            Permission {
-                id: 2,
-                perm: Perm::Read,
-            },
-        ];
+        let perms = vec![Permission {
+                             id: 1,
+                             perm: Perm::None,
+                         },
+                         Permission {
+                             id: 2,
+                             perm: Perm::Read,
+                         }];
 
-        changes = store.set_perms(&changes, DOM0_DOMAIN_ID, &path, perms.clone())
-            .unwrap();
+        changes = store.set_perms(&changes, DOM0_DOMAIN_ID, &path, perms.clone()).unwrap();
 
         let path = path.push("foo");
-        changes = store.write(&changes, 1, path.clone(), Value::from("bar"))
-            .unwrap();
+        changes = store.write(&changes, 1, path.clone(), Value::from("bar")).unwrap();
 
-        let read = store.get_perms(&changes, 1, &path)
-            .unwrap();
+        let read = store.get_perms(&changes, 1, &path).unwrap();
 
         assert_eq!(perms, read);
     }
@@ -831,26 +792,21 @@ mod test {
         let mut changes = store.mkdir(&ChangeSet::new(&store), DOM0_DOMAIN_ID, path.clone())
             .unwrap();
 
-        let perms = vec![
-            Permission {
-                id: 1,
-                perm: Perm::None,
-            },
-            Permission {
-                id: 2,
-                perm: Perm::Read,
-            },
-        ];
+        let perms = vec![Permission {
+                             id: 1,
+                             perm: Perm::None,
+                         },
+                         Permission {
+                             id: 2,
+                             perm: Perm::Read,
+                         }];
 
-        changes = store.set_perms(&changes, DOM0_DOMAIN_ID, &path, perms.clone())
-            .unwrap();
+        changes = store.set_perms(&changes, DOM0_DOMAIN_ID, &path, perms.clone()).unwrap();
 
         let path = path.push("foo");
-        changes = store.write(&changes, DOM0_DOMAIN_ID, path.clone(), Value::from("bar"))
-            .unwrap();
+        changes = store.write(&changes, DOM0_DOMAIN_ID, path.clone(), Value::from("bar")).unwrap();
 
-        let read = store.get_perms(&changes, 1, &path)
-            .unwrap();
+        let read = store.get_perms(&changes, 1, &path).unwrap();
 
         assert_eq!(perms, read);
     }
@@ -860,23 +816,22 @@ mod test {
         let store = Store::new();
 
         let mut changes = store.mkdir(&ChangeSet::new(&store),
-                   DOM0_DOMAIN_ID,
-                   Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap())
+                                      DOM0_DOMAIN_ID,
+                                      Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap())
             .unwrap();
 
         changes = store.set_perms(&changes,
-                       DOM0_DOMAIN_ID,
-                       &Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap(),
-                       vec![Permission {
-                                id: 1,
-                                perm: Perm::None,
-                            }])
+                                  DOM0_DOMAIN_ID,
+                                  &Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap(),
+                                  vec![Permission {
+                                           id: 1,
+                                           perm: Perm::None,
+                                       }])
             .unwrap();
 
         let path = Path::try_from(1, "foo").unwrap();
         let value = Value::from("value");
-        changes = store.write(&changes, 1, path.clone(), value.clone())
-            .unwrap();
+        changes = store.write(&changes, 1, path.clone(), value.clone()).unwrap();
 
         // Check the domain 2 is blocked
         let v = store.read(&changes, 2, &path);
@@ -896,23 +851,22 @@ mod test {
         let store = Store::new();
 
         let mut changes = store.mkdir(&ChangeSet::new(&store),
-                   DOM0_DOMAIN_ID,
-                   Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap())
+                                      DOM0_DOMAIN_ID,
+                                      Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap())
             .unwrap();
 
         changes = store.set_perms(&changes,
-                       DOM0_DOMAIN_ID,
-                       &Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap(),
-                       vec![Permission {
-                                id: 1,
-                                perm: Perm::None,
-                            }])
+                                  DOM0_DOMAIN_ID,
+                                  &Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap(),
+                                  vec![Permission {
+                                           id: 1,
+                                           perm: Perm::None,
+                                       }])
             .unwrap();
 
         let path = Path::try_from(1, "foo").unwrap();
         let value = Value::from("value");
-        changes = store.write(&changes, 1, path.clone(), value.clone())
-            .unwrap();
+        changes = store.write(&changes, 1, path.clone(), value.clone()).unwrap();
 
         // Check the domain 2 is blocked
         let v = store.write(&changes, 2, path.clone(), Value::from("new value"));
@@ -924,9 +878,9 @@ mod test {
 
         // Check the Dom0 is still allowed
         changes = store.write(&changes,
-                   DOM0_DOMAIN_ID,
-                   path.clone(),
-                   Value::from("new value"))
+                              DOM0_DOMAIN_ID,
+                              path.clone(),
+                              Value::from("new value"))
             .unwrap();
 
         let read = store.read(&changes, 1, &path).unwrap();
@@ -938,23 +892,22 @@ mod test {
         let store = Store::new();
 
         let mut changes = store.mkdir(&ChangeSet::new(&store),
-                   DOM0_DOMAIN_ID,
-                   Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap())
+                                      DOM0_DOMAIN_ID,
+                                      Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap())
             .unwrap();
 
         changes = store.set_perms(&changes,
-                       DOM0_DOMAIN_ID,
-                       &Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap(),
-                       vec![Permission {
-                                id: 1,
-                                perm: Perm::None,
-                            }])
+                                  DOM0_DOMAIN_ID,
+                                  &Path::try_from(DOM0_DOMAIN_ID, "/local/domain/1").unwrap(),
+                                  vec![Permission {
+                                           id: 1,
+                                           perm: Perm::None,
+                                       }])
             .unwrap();
 
         let path = Path::try_from(1, "foo").unwrap();
         let value = Value::from("value");
-        changes = store.write(&changes, 1, path.clone(), value.clone())
-            .unwrap();
+        changes = store.write(&changes, 1, path.clone(), value.clone()).unwrap();
 
         // Check the domain 2 is blocked
         let v = store.rm(&changes, 2, &path);
@@ -977,18 +930,17 @@ mod test {
             .unwrap();
 
         changes = store.set_perms(&changes,
-                       DOM0_DOMAIN_ID,
-                       &domain,
-                       vec![Permission {
-                                id: 1,
-                                perm: Perm::None,
-                            }])
+                                  DOM0_DOMAIN_ID,
+                                  &domain,
+                                  vec![Permission {
+                                           id: 1,
+                                           perm: Perm::None,
+                                       }])
             .unwrap();
 
         let path = Path::try_from(1, "foo").unwrap();
         let value = Value::from("value");
-        changes = store.write(&changes, 1, path.clone(), value.clone())
-            .unwrap();
+        changes = store.write(&changes, 1, path.clone(), value.clone()).unwrap();
 
         // Check the domain 2 is blocked
         let v = store.directory(&changes, 2, &domain);

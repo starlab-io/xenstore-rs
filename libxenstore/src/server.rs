@@ -285,13 +285,13 @@ impl Connection {
                event_set);
 
         event_loop.register(&self.sock,
-                      self.conn.token,
-                      event_set,
-                      mio::PollOpt::edge() | mio::PollOpt::oneshot())
+                            self.conn.token,
+                            event_set,
+                            mio::PollOpt::edge() | mio::PollOpt::oneshot())
             .or_else(|e| {
-                error!("CONN: {:?} Failed to register: {:?}", self.conn.token, e);
-                Err(e)
-            })
+                         error!("CONN: {:?} Failed to register: {:?}", self.conn.token, e);
+                         Err(e)
+                     })
     }
 
     /// Reregister the connection for events from the event loop
@@ -311,13 +311,13 @@ impl Connection {
                event_set);
 
         event_loop.reregister(&self.sock,
-                        self.conn.token,
-                        event_set,
-                        mio::PollOpt::edge() | mio::PollOpt::oneshot())
+                              self.conn.token,
+                              event_set,
+                              mio::PollOpt::edge() | mio::PollOpt::oneshot())
             .or_else(|e| {
-                error!("CONN: {:?} Failed to reregister: {:?}", self.conn.token, e);
-                Err(e)
-            })
+                         error!("CONN: {:?} Failed to reregister: {:?}", self.conn.token, e);
+                         Err(e)
+                     })
     }
 
 

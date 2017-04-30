@@ -93,15 +93,13 @@ impl TransactionList {
         self.list
             .get(&tx_id)
             .ok_or(Error::ENOENT(format!("failed to find transaction {}", tx_id)))
-            .and_then(|transaction| {
-                if transaction.conn != conn {
-                    Err(Error::ENOENT(format!("failed to find transaction {} for domain {}",
-                                              tx_id,
-                                              conn.dom_id)))
-                } else {
-                    Ok(&transaction.changes)
-                }
-            })
+            .and_then(|transaction| if transaction.conn != conn {
+                          Err(Error::ENOENT(format!("failed to find transaction {} for domain {}",
+                                                    tx_id,
+                                                    conn.dom_id)))
+                      } else {
+                          Ok(&transaction.changes)
+                      })
     }
 
     /// Put a reference to a `ChangeSet`.
@@ -113,16 +111,14 @@ impl TransactionList {
         self.list
             .get_mut(&tx_id)
             .ok_or(Error::ENOENT(format!("failed to find transaction {}", tx_id)))
-            .and_then(|transaction| {
-                if transaction.conn != conn {
-                    Err(Error::ENOENT(format!("failed to find transaction {} for domain {}",
-                                              tx_id,
-                                              conn.dom_id)))
-                } else {
-                    transaction.changes = changes;
-                    Ok(())
-                }
-            })
+            .and_then(|transaction| if transaction.conn != conn {
+                          Err(Error::ENOENT(format!("failed to find transaction {} for domain {}",
+                                                    tx_id,
+                                                    conn.dom_id)))
+                      } else {
+                          transaction.changes = changes;
+                          Ok(())
+                      })
     }
 
     /// End a transaction.
@@ -169,22 +165,16 @@ impl TransactionList {
             }));
 
         Ok(match success {
-            TransactionStatus::Success => store.apply(changes),
-            TransactionStatus::Failure => None,
-        })
+               TransactionStatus::Success => store.apply(changes),
+               TransactionStatus::Failure => None,
+           })
     }
 
     /// Reset the transactions for a domain.
     pub fn reset(&mut self, conn: ConnId) {
         let tx_ids = self.list
             .iter()
-            .filter_map(|(tx_id, txn)| {
-                if txn.conn == conn {
-                    Some(tx_id)
-                } else {
-                    None
-                }
-            })
+            .filter_map(|(tx_id, txn)| if txn.conn == conn { Some(tx_id) } else { None })
             .cloned()
             .collect::<Vec<wire::TxId>>();
 
@@ -369,9 +359,9 @@ mod test {
 
         // Write to the store
         let changes = store.write(&ChangeSet::new(&store),
-                   DOM0_DOMAIN_ID,
-                   path.clone(),
-                   value_external.clone())
+                                  DOM0_DOMAIN_ID,
+                                  path.clone(),
+                                  value_external.clone())
             .unwrap();
         store.apply(changes).unwrap();
 

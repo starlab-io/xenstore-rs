@@ -86,10 +86,10 @@ impl Egress for Directory {
         let body = self.paths
             .iter()
             .map(|p| {
-                let mut p = p.as_bytes().to_owned();
-                p.push(b'\0');
-                p
-            })
+                     let mut p = p.as_bytes().to_owned();
+                     p.push(b'\0');
+                     p
+                 })
             .collect();
 
         // covert to wire::Body
@@ -301,13 +301,13 @@ impl Egress for WatchEvent {
 
         // convert to wire::Body
         let body = wire::Body(vec![&self.node, &self.token]
-            .iter()
-            .map(|p| {
-                let mut p = p.as_bytes().to_owned();
-                p.push(b'\0');
-                p
-            })
-            .collect());
+                                  .iter()
+                                  .map(|p| {
+                                           let mut p = p.as_bytes().to_owned();
+                                           p.push(b'\0');
+                                           p
+                                       })
+                                  .collect());
 
         let header = wire::Header {
             msg_type: self.msg_type(),

@@ -171,8 +171,8 @@ fn to_strs<'a>(body: &'a wire::Body) -> Result<Vec<&'a str>> {
 
     body.iter()
         .map(|bytes| {
-            str::from_utf8(bytes).map_err(|_| Error::EINVAL(format!("bad supplied string")))
-        })
+                 str::from_utf8(bytes).map_err(|_| Error::EINVAL(format!("bad supplied string")))
+             })
         .collect()
 }
 
@@ -232,10 +232,7 @@ fn parse_path_rest<T: 'static + IngressPathRest + ProcessMessage>
     }
 
     let path = try!(path::Path::try_from(dom_id, strs[0]));
-    let rest = strs[1..]
-        .iter()
-        .map(|v| v.to_string())
-        .collect();
+    let rest = strs[1..].iter().map(|v| v.to_string()).collect();
 
     Ok(Box::new(T::new(md, path, rest)))
 }
@@ -297,12 +294,12 @@ pub fn parse(conn: connection::ConnId,
 
     msg.unwrap_or_else(|e| {
         Box::new(ErrorMsg {
-            md: Metadata {
-                conn: conn,
-                req_id: header.req_id,
-                tx_id: header.tx_id,
-            },
-            err: e,
-        })
+                     md: Metadata {
+                         conn: conn,
+                         req_id: header.req_id,
+                         tx_id: header.tx_id,
+                     },
+                     err: e,
+                 })
     })
 }

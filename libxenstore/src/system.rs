@@ -62,21 +62,21 @@ impl System {
         };
 
         Ok(match tx_id {
-            // If the transaction ID is the root transaction
-            ROOT_TRANSACTION => {
-                // Apply the changes to the data store
-                let applied = self.store.apply(changes);
-                // and fire any watches associated with the changes
-                self.watches.fire(applied)
-            }
-            // otherwise
-            _ => {
-                // just store the changes back with the transaction id
-                try!(self.txns.put(conn, tx_id, changes));
-                // and return no watches
-                HashSet::new()
-            }
-        })
+               // If the transaction ID is the root transaction
+               ROOT_TRANSACTION => {
+            // Apply the changes to the data store
+            let applied = self.store.apply(changes);
+            // and fire any watches associated with the changes
+            self.watches.fire(applied)
+        }
+               // otherwise
+               _ => {
+            // just store the changes back with the transaction id
+            try!(self.txns.put(conn, tx_id, changes));
+            // and return no watches
+            HashSet::new()
+        }
+           })
     }
 
     pub fn do_store<F, R>(&self, conn: ConnId, tx_id: wire::TxId, thunk: F) -> Result<R>
@@ -134,36 +134,38 @@ mod test {
 
         // set up a watch
         system.do_watch_mut(|watch_list| {
-                watch_list.watch(ConnId::new(Token(0), store::DOM0_DOMAIN_ID),
-                                 watch::WPath::Normal(path.clone()),
-                                 watch::WPath::Normal(path.clone()))
-            })
+                                watch_list.watch(ConnId::new(Token(0), store::DOM0_DOMAIN_ID),
+                                                 watch::WPath::Normal(path.clone()),
+                                                 watch::WPath::Normal(path.clone()))
+                            })
             .unwrap();
 
         // create a transaction
         let tx_id = system.do_transaction_mut(|txlst, store| {
-            txlst.start(ConnId::new(Token(0), store::DOM0_DOMAIN_ID), store)
-        });
+                                                  txlst.start(ConnId::new(Token(0),
+                                                                          store::DOM0_DOMAIN_ID),
+                                                              store)
+                                              });
 
         // add the value in the transaction
         let fired_watches = system.do_store_mut(ConnId::new(Token(0), store::DOM0_DOMAIN_ID),
-                          tx_id,
-                          |store, changes| {
-                              store.write(changes,
-                                          store::DOM0_DOMAIN_ID,
-                                          path.clone(),
-                                          value.clone())
-                          })
+                                                tx_id,
+                                                |store, changes| {
+                                                    store.write(changes,
+                                                                store::DOM0_DOMAIN_ID,
+                                                                path.clone(),
+                                                                value.clone())
+                                                })
             .unwrap();
         assert_eq!(fired_watches.len(), 0);
 
         // end the transaction
         let changes = system.do_transaction_mut(|txlst, store| {
-                txlst.end(store,
+                                                    txlst.end(store,
                           ConnId::new(Token(0), store::DOM0_DOMAIN_ID),
                           tx_id,
                           transaction::TransactionStatus::Success)
-            })
+                                                })
             .unwrap();
 
         // fire watches

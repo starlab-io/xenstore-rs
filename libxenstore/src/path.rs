@@ -41,15 +41,15 @@ impl Iterator for ParentIterator {
         };
 
         Some(Path(match current.parent() {
-            Some(ref p) => {
-                self.0 = Some(p.to_path_buf());
-                current.clone()
-            }
-            None => {
-                self.0 = None;
-                path::PathBuf::from("/")
-            }
-        }))
+                      Some(ref p) => {
+            self.0 = Some(p.to_path_buf());
+            current.clone()
+        }
+                      None => {
+            self.0 = None;
+            path::PathBuf::from("/")
+        }
+                  }))
     }
 }
 
@@ -107,9 +107,7 @@ impl Path {
     }
 
     pub fn as_bytes(&self) -> &[u8] {
-        self.0
-            .as_os_str()
-            .as_bytes()
+        self.0.as_os_str().as_bytes()
     }
 
     pub fn basename(self: &Path) -> Option<String> {
