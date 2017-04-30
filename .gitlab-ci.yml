@@ -9,10 +9,22 @@ stages:
     - build
     - test
 
-format:
+.format: &format-template
     stage: format
     script:
-        - ./scripts/check-format
+        - echo "CRATE_DIR=$CRATE_DIR"
+        - cd $CRATE_DIR
+        - cargo fmt -- --write-mode=diff
+
+format-libxenstore:
+    variables:
+        CRATE_DIR: libxenstore
+    <<: *format-template
+
+format-rxenstored:
+    variables:
+        CRATE_DIR: rxenstored
+    <<: *format-template
 
 build:x86:
     stage: build
