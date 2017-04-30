@@ -49,9 +49,7 @@ struct Args {
 
 extern "C" fn cleanup_handler(_: nix::c_int) {
     let uds_path = PathBuf::from(UDS_PATH);
-    remove_file(&uds_path)
-        .ok()
-        .expect("Failed to remove unix socket");
+    remove_file(&uds_path).ok().expect("Failed to remove unix socket");
     std::process::exit(0);
 }
 
@@ -74,12 +72,8 @@ fn main() {
                                 SigSet::empty());
 
     unsafe {
-        sigaction(signal::SIGINT, &action)
-            .ok()
-            .expect("Failed to register SIGINT handler");
-        sigaction(signal::SIGTERM, &action)
-            .ok()
-            .expect("Failed to register SIGTERM handler");
+        sigaction(signal::SIGINT, &action).ok().expect("Failed to register SIGINT handler");
+        sigaction(signal::SIGTERM, &action).ok().expect("Failed to register SIGTERM handler");
     }
 
     // where our Unix Socket will live, we need to create the path to it
@@ -92,13 +86,9 @@ fn main() {
         .ok()
         .expect("Failed to created directory for unix socket");
 
-    let sock = UnixListener::bind(&uds_path)
-        .ok()
-        .expect("Failed to create unix socket");
+    let sock = UnixListener::bind(&uds_path).ok().expect("Failed to create unix socket");
 
-    let mut event_loop = mio::EventLoop::new()
-        .ok()
-        .expect("Failed to create event loop");
+    let mut event_loop = mio::EventLoop::new().ok().expect("Failed to create event loop");
 
     let store = store::Store::new();
     let watches = watch::WatchList::new();
@@ -107,15 +97,9 @@ fn main() {
 
     let mut server = Server::new(sock, system);
 
-    server.register(&mut event_loop)
-        .ok()
-        .expect("Failed register server socket to event loop");
+    server.register(&mut event_loop).ok().expect("Failed register server socket to event loop");
 
-    event_loop.run(&mut server)
-        .ok()
-        .expect("Failed to start event loop");
+    event_loop.run(&mut server).ok().expect("Failed to start event loop");
 
-    remove_file(&uds_path)
-        .ok()
-        .expect("Failed to remove unix socket");
+    remove_file(&uds_path).ok().expect("Failed to remove unix socket");
 }

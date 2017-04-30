@@ -71,11 +71,11 @@ impl ProcessMessage for ingress::Directory {
                       self.md.tx_id,
                       |store, changes| store.directory(changes, self.md.conn.dom_id, &self.path))
             .map(|entries| {
-                Response::new(Box::new(egress::Directory {
-                    md: self.md,
-                    paths: entries,
-                }))
-            })
+                     Response::new(Box::new(egress::Directory {
+                                                md: self.md,
+                                                paths: entries,
+                                            }))
+                 })
             .unwrap_or_else(|e| Response::new(Box::new(egress::ErrorMsg::from(self.md, &e))))
     }
 }
@@ -87,11 +87,11 @@ impl ProcessMessage for ingress::Read {
                       self.md.tx_id,
                       |store, changes| store.read(changes, self.md.conn.dom_id, &self.path))
             .map(|value| {
-                Response::new(Box::new(egress::Read {
-                    md: self.md,
-                    value: value,
-                }))
-            })
+                     Response::new(Box::new(egress::Read {
+                                                md: self.md,
+                                                value: value,
+                                            }))
+                 })
             .unwrap_or_else(|e| Response::new(Box::new(egress::ErrorMsg::from(self.md, &e))))
     }
 }
@@ -103,11 +103,11 @@ impl ProcessMessage for ingress::GetPerms {
                       self.md.tx_id,
                       |store, changes| store.get_perms(changes, self.md.conn.dom_id, &self.path))
             .map(|perms| {
-                Response::new(Box::new(egress::GetPerms {
-                    md: self.md,
-                    perms: perms,
-                }))
-            })
+                     Response::new(Box::new(egress::GetPerms {
+                                                md: self.md,
+                                                perms: perms,
+                                            }))
+                 })
             .unwrap_or_else(|e| Response::new(Box::new(egress::ErrorMsg::from(self.md, &e))))
     }
 }
@@ -120,8 +120,9 @@ impl ProcessMessage for ingress::Mkdir {
                 store.mkdir(changes, self.md.conn.dom_id, self.path.clone())
             })
             .map(|watch_events| {
-                Response::new_with_events(Box::new(egress::Mkdir { md: self.md }), watch_events)
-            })
+                     Response::new_with_events(Box::new(egress::Mkdir { md: self.md }),
+                                               watch_events)
+                 })
             .unwrap_or_else(|e| Response::new(Box::new(egress::ErrorMsg::from(self.md, &e))))
     }
 }
@@ -134,8 +135,9 @@ impl ProcessMessage for ingress::Remove {
                           self.md.tx_id,
                           |store, changes| store.rm(changes, self.md.conn.dom_id, &self.path))
             .map(|watch_events| {
-                Response::new_with_events(Box::new(egress::Remove { md: self.md }), watch_events)
-            })
+                     Response::new_with_events(Box::new(egress::Remove { md: self.md }),
+                                               watch_events)
+                 })
             .unwrap_or_else(|e| Response::new(Box::new(egress::ErrorMsg::from(self.md, &e))))
     }
 }
@@ -145,8 +147,8 @@ impl ProcessMessage for ingress::Watch {
     fn process(&self, sys: &mut RefMut<system::System>) -> Response {
         let mut sys = sys;
         sys.do_watch_mut(|watches| {
-                watches.watch(self.md.conn, self.node.clone(), self.token.clone())
-            })
+                              watches.watch(self.md.conn, self.node.clone(), self.token.clone())
+                          })
             .map(|_| Response::new(Box::new(egress::Watch { md: self.md })))
             .unwrap_or_else(|e| Response::new(Box::new(egress::ErrorMsg::from(self.md, &e))))
     }
@@ -157,8 +159,8 @@ impl ProcessMessage for ingress::Unwatch {
     fn process(&self, sys: &mut RefMut<system::System>) -> Response {
         let mut sys = sys;
         sys.do_watch_mut(|watches| {
-                watches.unwatch(self.md.conn, self.node.clone(), self.token.clone())
-            })
+                              watches.unwatch(self.md.conn, self.node.clone(), self.token.clone())
+                          })
             .map(|_| Response::new(Box::new(egress::Unwatch { md: self.md })))
             .unwrap_or_else(|e| Response::new(Box::new(egress::ErrorMsg::from(self.md, &e))))
     }
@@ -170,9 +172,9 @@ impl ProcessMessage for ingress::TransactionStart {
         let mut sys = sys;
         let tx_id = sys.do_transaction_mut(|txns, store| txns.start(self.md.conn, &store));
         Response::new(Box::new(egress::TransactionStart {
-            md: self.md,
-            tx_id: tx_id,
-        }))
+                                   md: self.md,
+                                   tx_id: tx_id,
+                               }))
     }
 }
 
@@ -186,14 +188,12 @@ impl ProcessMessage for ingress::TransactionEnd {
             transaction::TransactionStatus::Failure
         };
 
-        sys.do_transaction_mut(|txns, store| {
-                txns.end(store, self.md.conn, self.md.tx_id, complete)
-            })
+        sys.do_transaction_mut(|txns, store| txns.end(store, self.md.conn, self.md.tx_id, complete))
             .map(|changes| {
-                let watch_events = sys.do_watch_mut(|watch_list| watch_list.fire(changes));
-                Response::new_with_events(Box::new(egress::TransactionEnd { md: self.md }),
-                                          watch_events)
-            })
+                     let watch_events = sys.do_watch_mut(|watch_list| watch_list.fire(changes));
+                     Response::new_with_events(Box::new(egress::TransactionEnd { md: self.md }),
+                                               watch_events)
+                 })
             .unwrap_or_else(|e| Response::new(Box::new(egress::ErrorMsg::from(self.md, &e))))
     }
 }
@@ -209,9 +209,9 @@ impl ProcessMessage for ingress::Release {
 impl ProcessMessage for ingress::GetDomainPath {
     fn process(&self, _: &mut RefMut<system::System>) -> Response {
         Response::new(Box::new(egress::GetDomainPath {
-            md: self.md,
-            path: path::get_domain_path(self.md.conn.dom_id),
-        }))
+                                   md: self.md,
+                                   path: path::get_domain_path(self.md.conn.dom_id),
+                               }))
     }
 }
 
@@ -247,9 +247,9 @@ impl ProcessMessage for ingress::Write {
                             self.rest[0].clone())
             })
             .map(|watch_events| {
-                let msg = Box::new(egress::Write { md: self.md });
-                Response::new_with_events(msg, watch_events)
-            })
+                     let msg = Box::new(egress::Write { md: self.md });
+                     Response::new_with_events(msg, watch_events)
+                 })
             .unwrap_or_else(|e| Response::new(Box::new(egress::ErrorMsg::from(self.md, &e))))
     }
 }
@@ -281,8 +281,9 @@ impl ProcessMessage for ingress::SetPerms {
                 store.set_perms(changes, self.md.conn.dom_id, &self.path, perms)
             })
             .map(|watch_events| {
-                Response::new_with_events(Box::new(egress::SetPerms { md: self.md }), watch_events)
-            })
+                     Response::new_with_events(Box::new(egress::SetPerms { md: self.md }),
+                                               watch_events)
+                 })
             .unwrap_or_else(|e| Response::new(Box::new(egress::ErrorMsg::from(self.md, &e))))
     }
 }

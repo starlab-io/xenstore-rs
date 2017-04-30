@@ -1,4 +1,4 @@
-image: starlabio/ubuntu-native-build:1.0.1
+image: starlabio/ubuntu-native-build:1.0.7
 
 cache:
     paths:

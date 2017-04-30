@@ -15,7 +15,6 @@
     You should have received a copy of the GNU General Public License along
     with this program; if not, see <http://www.gnu.org/licenses/>.
 **/
-
 #[cfg(test)]
 extern crate quickcheck;
 
@@ -107,11 +106,11 @@ impl Header {
         let len = try_opt!(input.read_u32::<NativeEndian>().ok());
 
         Some(Header {
-            msg_type: msg_type,
-            req_id: req_id,
-            tx_id: tx_id,
-            len: len,
-        })
+                 msg_type: msg_type,
+                 req_id: req_id,
+                 tx_id: tx_id,
+                 len: len,
+             })
     }
 
     /// Output the header as a vector of bytes

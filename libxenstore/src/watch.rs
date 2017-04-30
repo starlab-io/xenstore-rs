@@ -125,9 +125,7 @@ impl WatchList {
 
     pub fn fire(&self, applied_changes: Option<Vec<AppliedChange>>) -> HashSet<Watch> {
         if let Some(changes) = applied_changes {
-            changes.iter()
-                .flat_map(|change| self.fire_single(&change))
-                .collect::<HashSet<Watch>>()
+            changes.iter().flat_map(|change| self.fire_single(&change)).collect::<HashSet<Watch>>()
         } else {
             HashSet::new()
         }
@@ -152,14 +150,14 @@ mod test {
         let value = Value::from("value");
 
         watch_list.watch(ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
-                   WPath::Normal(path.clone()),
-                   WPath::Normal(path.clone()))
+                         WPath::Normal(path.clone()),
+                         WPath::Normal(path.clone()))
             .unwrap();
 
         let changes = store.write(&ChangeSet::new(&store),
-                   DOM0_DOMAIN_ID,
-                   path.clone(),
-                   value.clone())
+                                  DOM0_DOMAIN_ID,
+                                  path.clone(),
+                                  value.clone())
             .unwrap();
 
         let applied = store.apply(changes);
@@ -167,10 +165,11 @@ mod test {
 
         assert_eq!(watches.len(), 1);
         assert_eq!(watches.contains(&Watch {
-                       conn: ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
-                       node: WPath::Normal(path.clone()),
-                       token: WPath::Normal(path),
-                   }),
+                                         conn: ConnId::new(Token(DOM0_DOMAIN_ID as usize),
+                                                           DOM0_DOMAIN_ID),
+                                         node: WPath::Normal(path.clone()),
+                                         token: WPath::Normal(path),
+                                     }),
                    true);
     }
 
@@ -182,18 +181,18 @@ mod test {
         let value = Value::from("value");
 
         watch_list.watch(ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
-                   WPath::Normal(path.clone()),
-                   WPath::Normal(path.clone()))
+                         WPath::Normal(path.clone()),
+                         WPath::Normal(path.clone()))
             .unwrap();
         watch_list.watch(ConnId::new(Token(1), 1),
-                   WPath::Normal(path.clone()),
-                   WPath::Normal(path.clone()))
+                         WPath::Normal(path.clone()),
+                         WPath::Normal(path.clone()))
             .unwrap();
 
         let changes = store.write(&ChangeSet::new(&store),
-                   DOM0_DOMAIN_ID,
-                   path.clone(),
-                   value.clone())
+                                  DOM0_DOMAIN_ID,
+                                  path.clone(),
+                                  value.clone())
             .unwrap();
 
         let applied = store.apply(changes);
@@ -201,10 +200,11 @@ mod test {
 
         assert_eq!(watches.len(), 1);
         assert_eq!(watches.contains(&Watch {
-                       conn: ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
-                       node: WPath::Normal(path.clone()),
-                       token: WPath::Normal(path),
-                   }),
+                                         conn: ConnId::new(Token(DOM0_DOMAIN_ID as usize),
+                                                           DOM0_DOMAIN_ID),
+                                         node: WPath::Normal(path.clone()),
+                                         token: WPath::Normal(path),
+                                     }),
                    true);
     }
 
@@ -216,27 +216,27 @@ mod test {
         let value = Value::from("value");
 
         watch_list.watch(ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
-                   WPath::Normal(path.clone()),
-                   WPath::Normal(path.clone()))
+                         WPath::Normal(path.clone()),
+                         WPath::Normal(path.clone()))
             .unwrap();
         watch_list.watch(ConnId::new(Token(1), 1),
-                   WPath::Normal(path.clone()),
-                   WPath::Normal(path.clone()))
+                         WPath::Normal(path.clone()),
+                         WPath::Normal(path.clone()))
             .unwrap();
 
         let changes = store.write(&ChangeSet::new(&store),
-                   DOM0_DOMAIN_ID,
-                   path.clone(),
-                   value.clone())
+                                  DOM0_DOMAIN_ID,
+                                  path.clone(),
+                                  value.clone())
             .unwrap();
 
         let changes = store.set_perms(&changes,
-                       DOM0_DOMAIN_ID,
-                       &path,
-                       vec![store::Permission {
-                                id: 1,
-                                perm: store::Perm::None,
-                            }])
+                                      DOM0_DOMAIN_ID,
+                                      &path,
+                                      vec![store::Permission {
+                                               id: 1,
+                                               perm: store::Perm::None,
+                                           }])
             .unwrap();
 
         let applied = store.apply(changes);
@@ -262,14 +262,14 @@ mod test {
         let value = Value::from("value");
 
         watch_list.watch(ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
-                   WPath::Normal(path.parent().unwrap()),
-                   WPath::Normal(path.parent().unwrap()))
+                         WPath::Normal(path.parent().unwrap()),
+                         WPath::Normal(path.parent().unwrap()))
             .unwrap();
 
         let changes = store.write(&ChangeSet::new(&store),
-                   DOM0_DOMAIN_ID,
-                   path.clone(),
-                   value.clone())
+                                  DOM0_DOMAIN_ID,
+                                  path.clone(),
+                                  value.clone())
             .unwrap();
 
         let applied = store.apply(changes);
@@ -277,16 +277,17 @@ mod test {
 
         assert_eq!(watches.len(), 1);
         assert_eq!(watches.contains(&Watch {
-                       conn: ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
-                       node: WPath::Normal(path.parent().unwrap()),
-                       token: WPath::Normal(path.parent().unwrap()),
-                   }),
+                                         conn: ConnId::new(Token(DOM0_DOMAIN_ID as usize),
+                                                           DOM0_DOMAIN_ID),
+                                         node: WPath::Normal(path.parent().unwrap()),
+                                         token: WPath::Normal(path.parent().unwrap()),
+                                     }),
                    true);
 
         let changes = store.write(&ChangeSet::new(&store),
-                   DOM0_DOMAIN_ID,
-                   path.clone(),
-                   Value::from("value 2"))
+                                  DOM0_DOMAIN_ID,
+                                  path.clone(),
+                                  Value::from("value 2"))
             .unwrap();
 
         let applied = store.apply(changes);
@@ -303,18 +304,18 @@ mod test {
         let value = Value::from("value");
 
         watch_list.watch(ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
-                   WPath::Normal(path.parent().unwrap()),
-                   WPath::Normal(path.parent().unwrap()))
+                         WPath::Normal(path.parent().unwrap()),
+                         WPath::Normal(path.parent().unwrap()))
             .unwrap();
         watch_list.watch(ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
-                   WPath::Normal(path.clone()),
-                   WPath::Normal(path.clone()))
+                         WPath::Normal(path.clone()),
+                         WPath::Normal(path.clone()))
             .unwrap();
 
         let changes = store.write(&ChangeSet::new(&store),
-                   DOM0_DOMAIN_ID,
-                   path.clone(),
-                   value.clone())
+                                  DOM0_DOMAIN_ID,
+                                  path.clone(),
+                                  value.clone())
             .unwrap();
 
         let applied = store.apply(changes);
@@ -322,30 +323,32 @@ mod test {
 
         assert_eq!(watches.len(), 2);
         assert_eq!(watches.contains(&Watch {
-                       conn: ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
-                       node: WPath::Normal(path.parent().unwrap()),
-                       token: WPath::Normal(path.parent().unwrap()),
-                   }),
+                                         conn: ConnId::new(Token(DOM0_DOMAIN_ID as usize),
+                                                           DOM0_DOMAIN_ID),
+                                         node: WPath::Normal(path.parent().unwrap()),
+                                         token: WPath::Normal(path.parent().unwrap()),
+                                     }),
                    true);
         assert_eq!(watches.contains(&Watch {
-                       conn: ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
-                       node: WPath::Normal(path.clone()),
-                       token: WPath::Normal(path.clone()),
-                   }),
+                                         conn: ConnId::new(Token(DOM0_DOMAIN_ID as usize),
+                                                           DOM0_DOMAIN_ID),
+                                         node: WPath::Normal(path.clone()),
+                                         token: WPath::Normal(path.clone()),
+                                     }),
                    true);
 
-        let changes = store.rm(&ChangeSet::new(&store), DOM0_DOMAIN_ID, &path)
-            .unwrap();
+        let changes = store.rm(&ChangeSet::new(&store), DOM0_DOMAIN_ID, &path).unwrap();
 
         let applied = store.apply(changes);
         let watches = watch_list.fire(applied);
 
         assert_eq!(watches.len(), 1);
         assert_eq!(watches.contains(&Watch {
-                       conn: ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
-                       node: WPath::Normal(path.parent().unwrap()),
-                       token: WPath::Normal(path.parent().unwrap()),
-                   }),
+                                         conn: ConnId::new(Token(DOM0_DOMAIN_ID as usize),
+                                                           DOM0_DOMAIN_ID),
+                                         node: WPath::Normal(path.parent().unwrap()),
+                                         token: WPath::Normal(path.parent().unwrap()),
+                                     }),
                    true);
     }
 
@@ -354,22 +357,23 @@ mod test {
         let mut watch_list = WatchList::new();
 
         watch_list.watch(ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
-                   WPath::IntroduceDomain,
-                   WPath::IntroduceDomain)
+                         WPath::IntroduceDomain,
+                         WPath::IntroduceDomain)
             .unwrap();
         watch_list.watch(ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
-                   WPath::ReleaseDomain,
-                   WPath::ReleaseDomain)
+                         WPath::ReleaseDomain,
+                         WPath::ReleaseDomain)
             .unwrap();
 
         let watches = watch_list.fire_single(&AppliedChange::IntroduceDomain);
 
         assert_eq!(watches.len(), 1);
         assert_eq!(watches.contains(&Watch {
-                       conn: ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
-                       node: WPath::IntroduceDomain,
-                       token: WPath::IntroduceDomain,
-                   }),
+                                         conn: ConnId::new(Token(DOM0_DOMAIN_ID as usize),
+                                                           DOM0_DOMAIN_ID),
+                                         node: WPath::IntroduceDomain,
+                                         token: WPath::IntroduceDomain,
+                                     }),
                    true);
     }
 
@@ -378,22 +382,23 @@ mod test {
         let mut watch_list = WatchList::new();
 
         watch_list.watch(ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
-                   WPath::IntroduceDomain,
-                   WPath::IntroduceDomain)
+                         WPath::IntroduceDomain,
+                         WPath::IntroduceDomain)
             .unwrap();
         watch_list.watch(ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
-                   WPath::ReleaseDomain,
-                   WPath::ReleaseDomain)
+                         WPath::ReleaseDomain,
+                         WPath::ReleaseDomain)
             .unwrap();
 
         let watches = watch_list.fire_single(&AppliedChange::ReleaseDomain);
 
         assert_eq!(watches.len(), 1);
         assert_eq!(watches.contains(&Watch {
-                       conn: ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
-                       node: WPath::ReleaseDomain,
-                       token: WPath::ReleaseDomain,
-                   }),
+                                         conn: ConnId::new(Token(DOM0_DOMAIN_ID as usize),
+                                                           DOM0_DOMAIN_ID),
+                                         node: WPath::ReleaseDomain,
+                                         token: WPath::ReleaseDomain,
+                                     }),
                    true);
     }
 
@@ -402,26 +407,26 @@ mod test {
         let mut watch_list = WatchList::new();
 
         watch_list.watch(ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
-                   WPath::IntroduceDomain,
-                   WPath::IntroduceDomain)
+                         WPath::IntroduceDomain,
+                         WPath::IntroduceDomain)
             .unwrap();
         watch_list.watch(ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID),
-                   WPath::ReleaseDomain,
-                   WPath::ReleaseDomain)
+                         WPath::ReleaseDomain,
+                         WPath::ReleaseDomain)
             .unwrap();
         watch_list.watch(ConnId::new(Token(1 as usize), 1),
-                   WPath::ReleaseDomain,
-                   WPath::ReleaseDomain)
+                         WPath::ReleaseDomain,
+                         WPath::ReleaseDomain)
             .unwrap();
 
         watch_list.reset(ConnId::new(Token(DOM0_DOMAIN_ID as usize), DOM0_DOMAIN_ID)).unwrap();
 
         assert_eq!(watch_list.watches.len(), 1);
         assert_eq!(watch_list.watches.contains(&Watch {
-                       conn: ConnId::new(Token(1 as usize), 1),
-                       node: WPath::ReleaseDomain,
-                       token: WPath::ReleaseDomain,
-                   }),
+                                                    conn: ConnId::new(Token(1 as usize), 1),
+                                                    node: WPath::ReleaseDomain,
+                                                    token: WPath::ReleaseDomain,
+                                                }),
                    true);
     }
 }
