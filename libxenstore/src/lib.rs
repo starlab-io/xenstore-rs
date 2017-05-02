@@ -17,12 +17,9 @@
 **/
 
 extern crate byteorder;
-
 #[macro_use]
 extern crate log;
-
 extern crate rand;
-
 #[macro_use]
 extern crate try_opt;
 
