@@ -15,8 +15,8 @@
     You should have received a copy of the GNU General Public License along
     with this program; if not, see <http://www.gnu.org/licenses/>.
 **/
-
-extern crate docopt;
+#[macro_use]
+extern crate clap;
 extern crate libxenstore;
 #[macro_use]
 extern crate log;
@@ -25,6 +25,7 @@ extern crate nix;
 extern crate rustc_serialize;
 extern crate stderrlog;
 
+use clap::{Arg, App};
 use libxenstore::server::*;
 use libxenstore::store;
 use libxenstore::system;
@@ -37,16 +38,6 @@ use std::path::PathBuf;
 
 const UDS_PATH: &'static str = "/var/run/xenstored/socket";
 
-const USAGE: &'static str = "
-Usage: rxenstored [-q] [-v...]
-";
-
-#[derive(RustcDecodable)]
-struct Args {
-    flag_v: usize,
-    flag_q: bool,
-}
-
 extern "C" fn cleanup_handler(_: nix::c_int) {
     let uds_path = PathBuf::from(UDS_PATH);
     remove_file(&uds_path).ok().expect("Failed to remove unix socket");
@@ -55,15 +46,22 @@ extern "C" fn cleanup_handler(_: nix::c_int) {
 
 fn main() {
 
-    let args: Args = docopt::Docopt::new(USAGE)
-        .and_then(|d| d.argv(std::env::args().into_iter()).decode())
-        .unwrap_or_else(|e| e.exit());
+    let m = App::new("rxenstored")
+        .version(crate_version!())
+        .max_term_width(72)
+        .about("Daemon that provides info and configuration space for itself and the system")
+        .arg(Arg::with_name("quiet").help("Silences all log messages").short("q"))
+        .arg(Arg::with_name("verbose")
+                 .help("Provide multiple times to increase verbosity of log output")
+                 .short("v")
+                 .multiple(true))
+        .get_matches();
 
     stderrlog::new()
         .module(module_path!())
         .module("xenstore")
-        .verbosity(args.flag_v)
-        .quiet(args.flag_q)
+        .verbosity(m.occurrences_of("verbose") as usize)
+        .quiet(m.is_present("quiet"))
         .init()
         .unwrap();
 
