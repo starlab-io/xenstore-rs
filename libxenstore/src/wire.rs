@@ -98,19 +98,19 @@ pub struct Header {
 
 impl Header {
     /// Parse the header
-    pub fn parse(bytes: &[u8]) -> Option<Header> {
+    pub fn parse(bytes: &[u8]) -> io::Result<Header> {
         let mut input = io::Cursor::new(bytes);
-        let msg_type = try_opt!(input.read_u32::<NativeEndian>().ok());
-        let req_id = try_opt!(input.read_u32::<NativeEndian>().ok());
-        let tx_id = try_opt!(input.read_u32::<NativeEndian>().ok());
-        let len = try_opt!(input.read_u32::<NativeEndian>().ok());
+        let msg_type = input.read_u32::<NativeEndian>()?;
+        let req_id = input.read_u32::<NativeEndian>()?;
+        let tx_id = input.read_u32::<NativeEndian>()?;
+        let len = input.read_u32::<NativeEndian>()?;
 
-        Some(Header {
-                 msg_type: msg_type,
-                 req_id: req_id,
-                 tx_id: tx_id,
-                 len: len,
-             })
+        Ok(Header {
+               msg_type: msg_type,
+               req_id: req_id,
+               tx_id: tx_id,
+               len: len,
+           })
     }
 
     /// Output the header as a vector of bytes
@@ -225,7 +225,7 @@ mod tests {
             };
 
             // did it parse
-            let result = Header::parse(&bytes).is_some();
+            let result = Header::parse(&bytes).is_ok();
 
             // logical biconditional people
             // that's the negation of exclusive or

@@ -376,7 +376,7 @@ impl Connection {
             Some(n) if n > 0 => {
                 debug!("recv: {:?} bytes", n);
                 // if we got some data try to parser the header
-                Ok(wire::Header::parse(&buf))
+                Ok(wire::Header::parse(&buf).ok())
             }
             Some(_) => Err(io::Error::new(io::ErrorKind::UnexpectedEof, "0 bytes read")),
             None => Ok(None),
