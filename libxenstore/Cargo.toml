@@ -12,7 +12,6 @@ log = "^0.3"
 mio = "0.5.1"
 rand = "0.3.14"
 rustc-serialize = "^0.3"
-try_opt = "0.1.1"
 
 [dev-dependencies]
 quickcheck = "0.2"
