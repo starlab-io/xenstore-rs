@@ -16,7 +16,7 @@
     with this program; if not, see <http://www.gnu.org/licenses/>.
 **/
 
-extern crate byteorder;
+extern crate bytes;
 #[macro_use]
 extern crate log;
 extern crate rand;
