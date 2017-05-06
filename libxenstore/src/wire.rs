@@ -18,7 +18,7 @@
 #[cfg(test)]
 extern crate quickcheck;
 
-use byteorder::{ReadBytesExt, LittleEndian, WriteBytesExt};
+use bytes::{Buf, BufMut, LittleEndian};
 use std::io;
 
 #[cfg(test)]
@@ -99,29 +99,29 @@ pub struct Header {
 impl Header {
     /// Parse the header
     pub fn parse(bytes: &[u8]) -> io::Result<Header> {
-        let mut input = io::Cursor::new(bytes);
-        let msg_type = input.read_u32::<LittleEndian>()?;
-        let req_id = input.read_u32::<LittleEndian>()?;
-        let tx_id = input.read_u32::<LittleEndian>()?;
-        let len = input.read_u32::<LittleEndian>()?;
+        if bytes.len() >= ::std::mem::size_of::<Header>() {
+            let mut input = io::Cursor::new(bytes);
 
-        Ok(Header {
-               msg_type: msg_type,
-               req_id: req_id,
-               tx_id: tx_id,
-               len: len,
-           })
+            return Ok(Header {
+                          msg_type: input.get_u32::<LittleEndian>(),
+                          req_id: input.get_u32::<LittleEndian>(),
+                          tx_id: input.get_u32::<LittleEndian>(),
+                          len: input.get_u32::<LittleEndian>(),
+                      });
+        }
+
+        Err(io::Error::new(io::ErrorKind::UnexpectedEof, "expected 16 bytes"))
     }
 
     /// Output the header as a vector of bytes
     pub fn to_vec(&self) -> Vec<u8> {
-        let mut ret = io::Cursor::new(vec![0u8; HEADER_SIZE]);
-        ret.write_u32::<LittleEndian>(self.msg_type).unwrap();
-        ret.write_u32::<LittleEndian>(self.req_id).unwrap();
-        ret.write_u32::<LittleEndian>(self.tx_id).unwrap();
-        ret.write_u32::<LittleEndian>(self.len).unwrap();
+        let mut ret = vec![];
+        ret.put_u32::<LittleEndian>(self.msg_type);
+        ret.put_u32::<LittleEndian>(self.req_id);
+        ret.put_u32::<LittleEndian>(self.tx_id);
+        ret.put_u32::<LittleEndian>(self.len);
 
-        ret.into_inner()
+        ret
     }
 
     /// Provide the length that the body should be

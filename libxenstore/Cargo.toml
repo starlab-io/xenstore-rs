@@ -7,7 +7,7 @@ authors = ["Jonathan Creekmore <jonathan.creekmore@starlab.io>",
             "Doug Goldstein <doug@starlab.io>"]
 
 [dependencies]
-byteorder = "0.5.3"
+bytes = "^0.4"
 log = "^0.3"
 mio = "0.5.1"
 rand = "0.3.14"
