@@ -24,17 +24,19 @@ extern crate mio;
 extern crate nix;
 extern crate rustc_serialize;
 extern crate stderrlog;
+extern crate tokio_uds_proto;
 
 use clap::{Arg, App};
+use libxenstore::codec;
 use libxenstore::server::*;
 use libxenstore::store;
 use libxenstore::system;
 use libxenstore::transaction;
 use libxenstore::watch;
-use mio::unix::UnixListener;
 use nix::sys::signal::{self, sigaction, SigAction, SigHandler, SaFlags, SigSet};
 use std::fs::{DirBuilder, remove_file};
 use std::path::PathBuf;
+use tokio_uds_proto::UnixServer;
 
 const UDS_PATH: &'static str = "/var/run/xenstored/socket";
 
@@ -84,20 +86,14 @@ fn main() {
         .ok()
         .expect("Failed to created directory for unix socket");
 
-    let sock = UnixListener::bind(&uds_path).ok().expect("Failed to create unix socket");
-
-    let mut event_loop = mio::EventLoop::new().ok().expect("Failed to create event loop");
+    let sock = UnixServer::new(codec::XenStoreProto, uds_path);
 
     let store = store::Store::new();
     let watches = watch::WatchList::new();
     let transactions = transaction::TransactionList::new();
     let system = system::System::new(store, watches, transactions);
 
-    let mut server = Server::new(sock, system);
-
-    server.register(&mut event_loop).ok().expect("Failed register server socket to event loop");
-
-    event_loop.run(&mut server).ok().expect("Failed to start event loop");
+    sock.serve(|| Ok(codec::XenStoredService));
 
     remove_file(&uds_path).ok().expect("Failed to remove unix socket");
 }
