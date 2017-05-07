@@ -389,7 +389,7 @@ impl Connection {
                               buf: &mut Vec<u8>)
                               -> io::Result<Option<wire::Body>> {
         try!(input.try_read_buf(buf));
-        Ok(wire::Body::parse(header, buf))
+        Ok(Some(wire::Body::parse(header, buf)?))
     }
 
     /// Handle write events for the connection from the event loop

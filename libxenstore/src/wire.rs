@@ -146,9 +146,10 @@ impl Arbitrary for Header {
 pub struct Body(pub Vec<Vec<u8>>);
 
 impl Body {
-    pub fn parse(header: &Header, body: &[u8]) -> Option<Body> {
+    pub fn parse(header: &Header, body: &[u8]) -> io::Result<Body> {
         if header.len as usize != body.len() {
-            return None;
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof,
+                                      format!("expected {} bytes", header.len)));
         }
 
         // break the payload at NULL characters
@@ -157,7 +158,7 @@ impl Body {
             .map(|f| f.to_owned())
             .collect();
 
-        Some(Body(res))
+        Ok(Body(res))
     }
 
     /// Output the body as a vector of bytes
@@ -265,7 +266,7 @@ mod tests {
             };
 
             // did it parse
-            Body::parse(&header, &bytes).is_some()
+            Body::parse(&header, &bytes).is_ok()
         }
 
         quickcheck(prop as fn(BodyBytes) -> bool);
