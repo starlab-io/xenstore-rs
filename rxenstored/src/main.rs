@@ -20,21 +20,27 @@ extern crate clap;
 extern crate libxenstore;
 #[macro_use]
 extern crate log;
-extern crate mio;
 extern crate nix;
 extern crate rustc_serialize;
 extern crate stderrlog;
+extern crate tokio_core;
+extern crate tokio_proto;
+extern crate tokio_uds;
 
 use clap::{Arg, App};
+use libxenstore::codec;
 use libxenstore::server::*;
 use libxenstore::store;
 use libxenstore::system;
 use libxenstore::transaction;
 use libxenstore::watch;
-use mio::unix::UnixListener;
 use nix::sys::signal::{self, sigaction, SigAction, SigHandler, SaFlags, SigSet};
 use std::fs::{DirBuilder, remove_file};
 use std::path::PathBuf;
+use std::sync::Arc;
+use tokio_core::reactor::Core;
+use tokio_proto::BindServer;
+use tokio_uds::UnixListener;
 
 const UDS_PATH: &'static str = "/var/run/xenstored/socket";
 
@@ -84,20 +90,25 @@ fn main() {
         .ok()
         .expect("Failed to created directory for unix socket");
 
-    let sock = UnixListener::bind(&uds_path).ok().expect("Failed to create unix socket");
+    let mut core = Core::new().ok().expect("Failed to create event loop");
 
-    let mut event_loop = mio::EventLoop::new().ok().expect("Failed to create event loop");
+    let sock = UnixListener::bind(&uds_path, &core.handle()).ok().expect("Failed to create unix socket");
 
     let store = store::Store::new();
     let watches = watch::WatchList::new();
     let transactions = transaction::TransactionList::new();
     let system = system::System::new(store, watches, transactions);
 
-    let mut server = Server::new(sock, system);
+    let binder = codec::XenStoreProto { };
 
-    server.register(&mut event_loop).ok().expect("Failed register server socket to event loop");
+    let service = Arc::new(codec::XenStoredService);
 
-    event_loop.run(&mut server).ok().expect("Failed to start event loop");
+    let server = sock.incoming().for_each(move |(client, _)| {
+        binder.bind_server(&core.handle(), client, service.clone());
+        Ok(())
+    });
+
+    core.run(server).unwrap();
 
     remove_file(&uds_path).ok().expect("Failed to remove unix socket");
 }
