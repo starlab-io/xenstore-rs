@@ -20,6 +20,7 @@ extern crate mio;
 extern crate rustc_serialize;
 
 use connection;
+use futures::{future, Future, BoxFuture};
 use message::ingress;
 use message::egress;
 use self::mio::{TryRead, TryWrite};
@@ -30,6 +31,10 @@ use std::collections::{HashSet, VecDeque};
 use std::io;
 use store;
 use system::System;
+use tokio_io::{AsyncRead, AsyncWrite};
+use tokio_io::codec::Framed;
+use tokio_proto::pipeline::ServerProto;
+use tokio_service::Service;
 use watch::Watch;
 use wire;
 
@@ -475,5 +480,42 @@ impl State {
 
     fn transition_write() -> State {
         State::Write
+    }
+}
+
+pub struct XenStoreProto;
+
+impl<T: AsyncRead + AsyncWrite + 'static> ServerProto<T> for XenStoreProto {
+    /// For this protocol style, `Request` matches the `Item` type of the codec's `Encoder`
+    type Request = (wire::Header, wire::Body);
+
+    /// For this protocol style, `Response` matches the `Item` type of the codec's `Decoder`
+    type Response = (wire::Header, wire::Body);
+
+    /// A bit of boilerplate to hook in the codec:
+    type Transport = Framed<T, wire::XenStoreCodec>;
+    type BindTransport = Result<Self::Transport, io::Error>;
+    fn bind_transport(&self, io: T) -> Self::BindTransport {
+        Ok(io.framed(wire::XenStoreCodec))
+    }
+}
+
+pub struct XenStoredService;
+
+impl Service for XenStoredService {
+    // These types must match the corresponding protocol types:
+    type Request = (wire::Header, wire::Body);
+    type Response = (wire::Header, wire::Body);
+
+    // For non-streaming protocols, service errors are always io::Error
+    type Error = io::Error;
+
+    // The future for computing the response; box it for simplicity.
+    type Future = BoxFuture<Self::Response, Self::Error>;
+
+    // Produce a future for computing a response from a request.
+    fn call(&self, req: Self::Request) -> Self::Future {
+        // In this case, the response is immediate.
+        future::ok(req).boxed()
     }
 }

@@ -18,8 +18,9 @@
 #[cfg(test)]
 extern crate quickcheck;
 
-use bytes::{Buf, BufMut, LittleEndian};
+use bytes::{Buf, BufMut, BytesMut, LittleEndian};
 use std::io;
+use tokio_io::codec::{Decoder, Encoder};
 
 #[cfg(test)]
 use self::quickcheck::{Arbitrary, Gen};
@@ -311,5 +312,45 @@ mod tests {
         }
 
         quickcheck(prop as fn(Body) -> bool);
+    }
+}
+
+/// This tracks our wire codec
+pub struct XenStoreCodec;
+
+impl Decoder for XenStoreCodec {
+    type Item = (Header, Body);
+    type Error = io::Error;
+
+    fn decode(&mut self, buf: &mut BytesMut) -> io::Result<Option<Self::Item>> {
+        // We must have at least header size
+        if buf.len() < HEADER_SIZE {
+            // not a full message
+            return Ok(None);
+        }
+
+        let header = Header::parse(&buf)?;
+
+        // We must get the full body size
+        if buf.len() < header.len() + HEADER_SIZE {
+            // not a full message
+            return Ok(None);
+        }
+
+        buf.split_to(HEADER_SIZE);
+
+        let body = Body::parse(&header, &buf.split_to(header.len()))?;
+        Ok(Some((header, body)))
+    }
+}
+
+impl Encoder for XenStoreCodec {
+    type Item = (Header, Body);
+    type Error = io::Error;
+
+    fn encode(&mut self, msg: (Header, Body), buf: &mut BytesMut) -> io::Result<()> {
+        buf.extend(msg.0.to_vec());
+        buf.extend(msg.1.to_vec());
+        Ok(())
     }
 }
