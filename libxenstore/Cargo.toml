@@ -8,10 +8,14 @@ authors = ["Jonathan Creekmore <jonathan.creekmore@starlab.io>",
 
 [dependencies]
 bytes = "^0.4"
+futures = "^0.1"
 log = "^0.3"
 mio = "0.5.1"
 rand = "0.3.14"
 rustc-serialize = "^0.3"
+tokio-io = "^0.1"
+tokio-proto = "^0.1"
+tokio-service = "^0.1"
 
 [dev-dependencies]
 quickcheck = "0.2"
