@@ -84,9 +84,9 @@ fn main() {
         .ok()
         .expect("Failed to created directory for unix socket");
 
-    let sock = UnixListener::bind(&uds_path).ok().expect("Failed to create unix socket");
-
     let mut event_loop = mio::EventLoop::new().ok().expect("Failed to create event loop");
+
+    let sock = UnixListener::bind(&uds_path).ok().expect("Failed to create unix socket");
 
     let store = store::Store::new();
     let watches = watch::WatchList::new();
