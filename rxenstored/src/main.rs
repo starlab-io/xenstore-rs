@@ -59,7 +59,7 @@ fn main() {
 
     stderrlog::new()
         .module(module_path!())
-        .module("xenstore")
+        .module("libxenstore")
         .verbosity(m.occurrences_of("verbose") as usize)
         .quiet(m.is_present("quiet"))
         .init()
