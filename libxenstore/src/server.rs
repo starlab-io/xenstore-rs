@@ -29,7 +29,7 @@ use self::mio::util::Slab;
 use std::cell::RefCell;
 use std::collections::{HashSet, VecDeque};
 use std::io;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 use store;
 use system::System;
 use tokio_io::{AsyncRead, AsyncWrite};
@@ -501,7 +501,10 @@ impl<T: AsyncRead + AsyncWrite + 'static> ServerProto<T> for XenStoreProto {
     }
 }
 
-pub struct XenStoredService;
+pub struct XenStoredService {
+    // datastore system objects
+    pub system: Arc<Mutex<System>>,
+}
 
 impl Service for XenStoredService {
     // These types must match the corresponding protocol types:
@@ -516,7 +519,28 @@ impl Service for XenStoredService {
 
     // Produce a future for computing a response from a request.
     fn call(&self, req: Self::Request) -> Self::Future {
-        // In this case, the response is immediate.
-        future::ok(req).boxed()
+        // grab a lock to the System object, it won't fail since
+        // we are running single-threaded since that's how xenstored
+        // works
+        let mut sys = self.system.lock().unwrap();
+
+        // create the connection object that is currently required
+        // future refactors will have to change this to know which
+        // socket the data came from but right now we just have one
+        // socket. We also only currently support dom0 communication
+        // so hardcode dom0
+        let token = mio::Token(0);
+        let conn = connection::ConnId::new(token, store::DOM0_DOMAIN_ID);
+
+        // parse the incoming request (header, body) and process it
+        let msg = ingress::parse(conn, &req.0, req.1).process(&mut sys);
+
+        // take the response and encode it to (header, body), this throws
+        // away any watches that may have fired so this will need to be
+        // fixed in the future
+        let (hdr, body) = msg.msg.encode();
+
+        // return the completed future
+        future::ok((hdr, body)).boxed()
     }
 }
