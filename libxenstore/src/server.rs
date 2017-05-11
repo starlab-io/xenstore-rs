@@ -376,7 +376,7 @@ impl Connection {
             Some(n) if n > 0 => {
                 debug!("recv: {:?} bytes", n);
                 // if we got some data try to parser the header
-                Ok(wire::Header::parse(&buf))
+                Ok(wire::Header::parse(&buf).ok())
             }
             Some(_) => Err(io::Error::new(io::ErrorKind::UnexpectedEof, "0 bytes read")),
             None => Ok(None),
@@ -389,7 +389,7 @@ impl Connection {
                               buf: &mut Vec<u8>)
                               -> io::Result<Option<wire::Body>> {
         try!(input.try_read_buf(buf));
-        Ok(wire::Body::parse(header, buf))
+        Ok(Some(wire::Body::parse(header, buf)?))
     }
 
     /// Handle write events for the connection from the event loop

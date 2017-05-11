@@ -18,7 +18,7 @@
 #[cfg(test)]
 extern crate quickcheck;
 
-use byteorder::{ReadBytesExt, NativeEndian, WriteBytesExt};
+use bytes::{Buf, BufMut, LittleEndian};
 use std::io;
 
 #[cfg(test)]
@@ -98,30 +98,30 @@ pub struct Header {
 
 impl Header {
     /// Parse the header
-    pub fn parse(bytes: &[u8]) -> Option<Header> {
-        let mut input = io::Cursor::new(bytes);
-        let msg_type = try_opt!(input.read_u32::<NativeEndian>().ok());
-        let req_id = try_opt!(input.read_u32::<NativeEndian>().ok());
-        let tx_id = try_opt!(input.read_u32::<NativeEndian>().ok());
-        let len = try_opt!(input.read_u32::<NativeEndian>().ok());
+    pub fn parse(bytes: &[u8]) -> io::Result<Header> {
+        if bytes.len() >= ::std::mem::size_of::<Header>() {
+            let mut input = io::Cursor::new(bytes);
 
-        Some(Header {
-                 msg_type: msg_type,
-                 req_id: req_id,
-                 tx_id: tx_id,
-                 len: len,
-             })
+            return Ok(Header {
+                          msg_type: input.get_u32::<LittleEndian>(),
+                          req_id: input.get_u32::<LittleEndian>(),
+                          tx_id: input.get_u32::<LittleEndian>(),
+                          len: input.get_u32::<LittleEndian>(),
+                      });
+        }
+
+        Err(io::Error::new(io::ErrorKind::UnexpectedEof, "expected 16 bytes"))
     }
 
     /// Output the header as a vector of bytes
     pub fn to_vec(&self) -> Vec<u8> {
-        let mut ret = io::Cursor::new(vec![0u8; HEADER_SIZE]);
-        ret.write_u32::<NativeEndian>(self.msg_type).unwrap();
-        ret.write_u32::<NativeEndian>(self.req_id).unwrap();
-        ret.write_u32::<NativeEndian>(self.tx_id).unwrap();
-        ret.write_u32::<NativeEndian>(self.len).unwrap();
+        let mut ret = vec![];
+        ret.put_u32::<LittleEndian>(self.msg_type);
+        ret.put_u32::<LittleEndian>(self.req_id);
+        ret.put_u32::<LittleEndian>(self.tx_id);
+        ret.put_u32::<LittleEndian>(self.len);
 
-        ret.into_inner()
+        ret
     }
 
     /// Provide the length that the body should be
@@ -146,9 +146,10 @@ impl Arbitrary for Header {
 pub struct Body(pub Vec<Vec<u8>>);
 
 impl Body {
-    pub fn parse(header: &Header, body: &[u8]) -> Option<Body> {
+    pub fn parse(header: &Header, body: &[u8]) -> io::Result<Body> {
         if header.len as usize != body.len() {
-            return None;
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof,
+                                      format!("expected {} bytes", header.len)));
         }
 
         // break the payload at NULL characters
@@ -157,7 +158,7 @@ impl Body {
             .map(|f| f.to_owned())
             .collect();
 
-        Some(Body(res))
+        Ok(Body(res))
     }
 
     /// Output the body as a vector of bytes
@@ -225,7 +226,7 @@ mod tests {
             };
 
             // did it parse
-            let result = Header::parse(&bytes).is_some();
+            let result = Header::parse(&bytes).is_ok();
 
             // logical biconditional people
             // that's the negation of exclusive or
@@ -265,7 +266,7 @@ mod tests {
             };
 
             // did it parse
-            Body::parse(&header, &bytes).is_some()
+            Body::parse(&header, &bytes).is_ok()
         }
 
         quickcheck(prop as fn(BodyBytes) -> bool);
