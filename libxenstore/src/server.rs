@@ -26,9 +26,10 @@ use message::egress;
 use self::mio::{TryRead, TryWrite};
 use self::mio::unix::{UnixListener, UnixStream};
 use self::mio::util::Slab;
-use std::cell::{RefCell, RefMut};
+use std::cell::RefCell;
 use std::collections::{HashSet, VecDeque};
 use std::io;
+use std::sync::{Mutex, MutexGuard};
 use store;
 use system::System;
 use tokio_io::{AsyncRead, AsyncWrite};
@@ -46,7 +47,7 @@ pub struct Server {
     // listen of connections accepted by the server
     conns: Slab<RefCell<Connection>>,
     // datastore system objects
-    system: RefCell<System>,
+    system: Mutex<System>,
 }
 
 impl Server {
@@ -58,7 +59,7 @@ impl Server {
         Server {
             sock: sock,
             conns: slab,
-            system: RefCell::new(system),
+            system: Mutex::new(system),
         }
     }
 
@@ -108,7 +109,7 @@ impl Server {
                         error!("Failed to register {:?} connection with event loop: {:?}",
                                token,
                                e);
-                        conn.close(&mut self.system.borrow_mut());
+                        conn.close(&mut self.system.lock().unwrap());
                     }
                 }
             }
@@ -153,7 +154,7 @@ impl mio::Handler for Server {
                 let is_closed = {
                     let ref conn_ = self.find_conn_by_token(token);
                     let mut conn = conn_.borrow_mut();
-                    conn.ready(event_loop, events, &mut self.system.borrow_mut());
+                    conn.ready(event_loop, events, &mut self.system.lock().unwrap());
                     conn.is_closed()
                 };
 
@@ -174,7 +175,7 @@ impl mio::Handler for Server {
             debug!("watch: {:?}", watch);
             conn.enqueue(Box::new(egress::WatchEvent::new(watch)),
                          event_loop,
-                         &mut self.system.borrow_mut())
+                         &mut self.system.lock().unwrap())
         }
     }
 }
@@ -206,7 +207,7 @@ impl Connection {
     fn enqueue(&mut self,
                msg: Box<egress::Egress>,
                event_loop: &mut mio::EventLoop<Server>,
-               system: &mut RefMut<System>) {
+               system: &mut MutexGuard<System>) {
         let (hdr, body) = msg.encode();
         self.tx_q.push_back(Buffer::new(hdr.to_vec()));
         self.tx_q.push_back(Buffer::new(body.to_vec()));
@@ -223,7 +224,7 @@ impl Connection {
     fn ready(&mut self,
              event_loop: &mut mio::EventLoop<Server>,
              events: mio::EventSet,
-             system: &mut RefMut<System>) {
+             system: &mut MutexGuard<System>) {
 
         debug!("CONN: {:?}. EVENTS: {:?} STATE: {:?}",
                self.conn.token,
@@ -328,7 +329,7 @@ impl Connection {
 
     /// Handle read events for the connection from the event loop
     fn read(&mut self,
-            system: &mut RefMut<System>,
+            system: &mut MutexGuard<System>,
             event_loop: &mut mio::EventLoop<Server>)
             -> io::Result<()> {
         let conn = self.conn;
@@ -440,7 +441,7 @@ impl Connection {
     }
 
     /// Close this connection
-    fn close(&mut self, system: &mut RefMut<System>) {
+    fn close(&mut self, system: &mut MutexGuard<System>) {
         debug!("CONN: {:?} closed", self.conn.token);
         self.state = State::Closed;
         let _ = system.do_watch_mut(|watches| watches.reset(self.conn));
