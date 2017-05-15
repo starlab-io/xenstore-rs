@@ -21,7 +21,6 @@ extern crate libxenstore;
 #[macro_use]
 extern crate log;
 extern crate nix;
-extern crate rustc_serialize;
 extern crate stderrlog;
 extern crate tokio_uds_proto;
 
