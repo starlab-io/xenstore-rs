@@ -7,3 +7,5 @@ authors = ["Jonathan Creekmore <jonathan.creekmore@starlab.io>",
 
 [dependencies]
 clap = "2.18.0"
+libxenstore = { path = "../libxenstore" }
+tokio-core = "^0.1"
