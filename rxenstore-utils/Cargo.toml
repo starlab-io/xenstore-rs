@@ -1,0 +1,9 @@
+[package]
+name = "rxenstore-utils"
+license = "GPL-2.0"
+version = "0.0.0"
+authors = ["Jonathan Creekmore <jonathan.creekmore@starlab.io>",
+            "Doug Goldstein <doug@starlab.io>"]
+
+[dependencies]
+clap = "2.18.0"

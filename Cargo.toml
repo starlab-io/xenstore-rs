@@ -1,5 +1,6 @@
 [workspace]
 members = [
     "libxenstore",
-    "rxenstored"
+    "rxenstore-utils",
+    "rxenstored",
 ]
