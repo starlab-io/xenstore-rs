@@ -21,10 +21,14 @@ extern crate futures;
 #[macro_use]
 extern crate log;
 extern crate rand;
+extern crate tokio_core;
 extern crate tokio_io;
 extern crate tokio_proto;
 extern crate tokio_service;
+extern crate tokio_uds;
+extern crate tokio_uds_proto;
 
+pub mod client;
 pub mod connection;
 pub mod error;
 pub mod message;
