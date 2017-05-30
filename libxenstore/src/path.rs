@@ -69,15 +69,15 @@ pub fn get_domain_path(dom_id: wire::DomainId) -> Path {
 impl Path {
     pub fn try_from(dom_id: wire::DomainId, s: &str) -> Result<Path> {
         if s == "" {
-            return Err(Error::EINVAL(format!("empty path is not allowed")));
+            return Err(Error::EINVAL("empty path is not allowed".into()));
         }
 
         if s.contains("//") {
-            return Err(Error::EINVAL(format!("doubled / is not allowed")));
+            return Err(Error::EINVAL("doubled / is not allowed".into()));
         }
 
         if s != "/" && s.ends_with("/") {
-            return Err(Error::EINVAL(format!("trailing / is not allowed")));
+            return Err(Error::EINVAL("trailing / is not allowed".into()));
         }
 
         let input = path::PathBuf::from(s);
