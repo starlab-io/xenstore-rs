@@ -29,6 +29,7 @@ pub mod connection;
 pub mod error;
 pub mod message;
 pub mod path;
+mod request;
 pub mod server;
 pub mod store;
 pub mod system;
