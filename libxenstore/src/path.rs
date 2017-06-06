@@ -26,6 +26,9 @@ use super::wire;
 pub struct Path(path::PathBuf);
 pub struct ParentIterator(Option<path::PathBuf>);
 
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct RelativePath(path::PathBuf);
+
 const MAX_RELATIVE: usize = 2048;
 const MAX_ABSOLUTE: usize = 3072;
 
@@ -133,6 +136,12 @@ impl Path {
 
     pub fn is_child(&self, parent: &Path) -> bool {
         self.0.starts_with(&parent.0)
+    }
+}
+
+impl RelativePath {
+    pub fn new<P: AsRef<path::Path>>(path: P) -> Self {
+        RelativePath(path.as_ref().to_owned())
     }
 }
 
