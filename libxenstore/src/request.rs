@@ -16,28 +16,11 @@
     with this program; if not, see <http://www.gnu.org/licenses/>.
 **/
 
+use bytes::{Buf, IntoBuf};
 use std::marker::PhantomData;
 use std::str;
 use super::{path, wire};
 use super::error::{Error, Result};
-
-enum MsgType {
-    Directory,
-    Read,
-    GetPerms,
-    Mkdir,
-    Remove,
-    Write,
-    SetPerms,
-    TransactionEnd,
-    Watch,
-    Unwatch,
-    TransactionStart,
-    Release,
-    GetDomainPath,
-    Resume,
-    Restrict,
-}
 
 enum MsgData {
     Path(path::RelativePath),
@@ -48,7 +31,7 @@ enum MsgData {
 }
 
 pub struct Request<M> {
-    msg_type: MsgType,
+    msg_type: M,
     inner: MsgData,
     phantom: PhantomData<M>,
     /*
@@ -75,17 +58,41 @@ pub struct Request<M> {
     */
 }
 
-enum IngressPath {}
-enum IngressWPath {}
-enum IngressPathRest {}
-enum IngressBool {}
-enum IngressNoArg {}
+enum IngressPath {
+    Directory = wire::XS_DIRECTORY as isize,
+    Read = wire::XS_READ as isize,
+    GetPerms = wire::XS_GET_PERMS as isize,
+    Mkdir = wire::XS_MKDIR as isize,
+    Remove = wire::XS_RM as isize,
+}
+
+enum IngressWPath {
+    Watch = wire::XS_WATCH as isize,
+    Unwatch = wire::XS_UNWATCH as isize,
+}
+
+enum IngressPathRest {
+    Write = wire::XS_WRITE as isize,
+    SetPerms = wire::XS_SET_PERMS as isize,
+}
+
+enum IngressBool {
+    TransactionEnd = wire::XS_TRANSACTION_END as isize,
+}
+
+enum IngressNoArg {
+    TransactionStart = wire::XS_TRANSACTION_START as isize,
+    Release = wire::XS_RELEASE as isize,
+    GetDomainPath = wire::XS_GET_DOMAIN_PATH as isize,
+    Resume = wire::XS_RESUME as isize,
+    Restrict = wire::XS_RESTRICT as isize,
+}
 
 macro_rules! ingress_path {
     ($fnname:ident, $id:ident) => {
         pub fn $fnname(path: path::RelativePath) -> Self {
             Request {
-                msg_type: MsgType::$id,
+                msg_type: IngressPath::$id,
                 inner: MsgData::Path(path),
                 phantom: PhantomData,
             }
@@ -99,13 +106,23 @@ impl Request<IngressPath> {
     ingress_path!(get_perms, GetPerms);
     ingress_path!(mkdir, Mkdir);
     ingress_path!(rm, Remove);
+
+    fn to_bytes(self) -> wire::Body {
+        let mut body = match self.inner {
+            MsgData::Path(x) => x.into_buf().collect::<Vec<u8>>(),
+            _ => unreachable!(),
+        };
+        // toss the NULL on the end and build our final vector of bytes
+        body.push(b'\0');
+        wire::Body(vec![body])
+    }
 }
 
 macro_rules! ingress_wpath {
     ($fnname:ident, $id:ident) => {
-        fn $fnname(node: path::RelativePath, token: path::RelativePath) -> Self {
+        pub fn $fnname(node: path::RelativePath, token: path::RelativePath) -> Self {
             Request {
-                msg_type: MsgType::$id,
+                msg_type: IngressWPath::$id,
                 inner: MsgData::PathWatch(node, token),
                 phantom: PhantomData,
             }
@@ -120,9 +137,9 @@ impl Request<IngressWPath> {
 
 macro_rules! ingress_path_rest {
     ($fnname:ident, $id:ident) => {
-        fn $fnname(path: path::RelativePath, data: Vec<String>) -> Self {
+        pub fn $fnname(path: path::RelativePath, data: Vec<String>) -> Self {
             Request {
-                msg_type: MsgType::$id,
+                msg_type: IngressPathRest::$id,
                 inner: MsgData::PathRest(path, data),
                 phantom: PhantomData,
             }
@@ -137,9 +154,9 @@ impl Request<IngressPathRest> {
 
 macro_rules! ingress_bool {
     ($fnname:ident, $id:ident) => {
-        fn $fnname(data: bool) -> Self {
+        pub fn $fnname(data: bool) -> Self {
             Request {
-                msg_type: MsgType::$id,
+                msg_type: IngressBool::$id,
                 inner: MsgData::Bool(data),
                 phantom: PhantomData,
             }
@@ -148,14 +165,14 @@ macro_rules! ingress_bool {
 }
 
 impl Request<IngressBool> {
-    ingress_path_rest!(transaction_end, TransactionEnd);
+    ingress_bool!(transaction_end, TransactionEnd);
 }
 
 macro_rules! ingress_no_arg {
     ($fnname:ident, $id:ident) => {
-        fn $fnname() -> Self {
+        pub fn $fnname() -> Self {
             Request {
-                msg_type: MsgType::$id,
+                msg_type: IngressNoArg::$id,
                 inner: MsgData::NoArg,
                 phantom: PhantomData,
             }
