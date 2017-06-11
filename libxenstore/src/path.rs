@@ -16,6 +16,7 @@
     with this program; if not, see <http://www.gnu.org/licenses/>.
 **/
 
+use bytes::IntoBuf;
 use std::iter::{IntoIterator, Iterator};
 use std::os::unix::ffi::OsStrExt;
 use std::path;
@@ -144,6 +145,15 @@ impl RelativePath {
         RelativePath(path.as_ref().to_owned())
     }
 }
+
+impl<'a> IntoBuf for &'a RelativePath {
+    type Buf = ::std::io::Cursor<&'a [u8]>;
+
+    fn into_buf(self) -> Self::Buf {
+        self.0.as_os_str().as_bytes().into_buf()
+    }
+}
+
 
 #[cfg(test)]
 mod test {
