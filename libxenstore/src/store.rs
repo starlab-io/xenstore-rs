@@ -75,7 +75,7 @@ fn perms_ok(dom_id: wire::DomainId, permissions: &[Permission], perm: Perm) -> b
         return p.perm.allowed(&perm);
     }
 
-    return permissions[0].perm.allowed(&perm);
+    permissions[0].perm.allowed(&perm)
 }
 
 impl Node {
@@ -185,18 +185,18 @@ impl Store {
         let changes = &change_set.changes;
 
         for (path, change) in changes {
-            match change {
-                &Change::Write(ref node) => self.store.insert(path.clone(), node.clone()),
-                &Change::Remove(_) => self.store.remove(path),
+            match *change {
+                Change::Write(ref node) => self.store.insert(path.clone(), node.clone()),
+                Change::Remove(_) => self.store.remove(path),
             };
         }
 
         let applied = changes.iter()
-            .map(|(path, change)| match change {
-                     &Change::Write(ref node) => {
+            .map(|(path, change)| match *change {
+                     Change::Write(ref node) => {
                          AppliedChange::Write(path.clone(), node.permissions.clone())
                      }
-                     &Change::Remove(_) => AppliedChange::Remove(path.clone()),
+                     Change::Remove(_) => AppliedChange::Remove(path.clone()),
                  })
             .collect::<Vec<AppliedChange>>();
 
@@ -213,11 +213,9 @@ impl Store {
                     -> Result<&'a Node> {
         let node = {
             if change_set.changes.contains_key(path) {
-                match change_set.changes.get(path).unwrap() {
-                    &Change::Write(ref node) => Ok(node),
-                    &Change::Remove(_) => {
-                        Err(Error::ENOENT(format!("failed to lookup {:?}", path)))
-                    }
+                match *change_set.changes.get(path).unwrap() {
+                    Change::Write(ref node) => Ok(node),
+                    Change::Remove(_) => Err(Error::ENOENT(format!("failed to lookup {:?}", path))),
                 }
             } else {
                 self.store.get(path).ok_or(Error::ENOENT(format!("failed to lookup {:?}", path)))
@@ -430,7 +428,7 @@ impl Store {
             };
 
             // And recursively remove all of its children
-            for child in node.children.iter() {
+            for child in &node.children {
                 let path = path.push(&child);
                 remove.push_back(path);
             }

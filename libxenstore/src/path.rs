@@ -69,15 +69,15 @@ pub fn get_domain_path(dom_id: wire::DomainId) -> Path {
 impl Path {
     pub fn try_from(dom_id: wire::DomainId, s: &str) -> Result<Path> {
         if s == "" {
-            return Err(Error::EINVAL(format!("empty path is not allowed")));
+            return Err(Error::EINVAL("empty path is not allowed".into()));
         }
 
         if s.contains("//") {
-            return Err(Error::EINVAL(format!("doubled / is not allowed")));
+            return Err(Error::EINVAL("doubled / is not allowed".into()));
         }
 
         if s != "/" && s.ends_with("/") {
-            return Err(Error::EINVAL(format!("trailing / is not allowed")));
+            return Err(Error::EINVAL("trailing / is not allowed".into()));
         }
 
         let input = path::PathBuf::from(s);
@@ -110,7 +110,7 @@ impl Path {
         self.0.as_os_str().as_bytes()
     }
 
-    pub fn basename(self: &Path) -> Option<String> {
+    pub fn basename(&self) -> Option<String> {
         self.0
             .as_path()
             .file_name()
@@ -118,20 +118,20 @@ impl Path {
             .map(|bn| bn.to_owned())
     }
 
-    pub fn parent(self: &Path) -> Option<Path> {
+    pub fn parent(&self) -> Option<Path> {
         self.0
             .as_path()
             .parent()
             .map(|parent| Path(parent.to_path_buf()))
     }
 
-    pub fn push(self: &Path, component: &str) -> Path {
+    pub fn push(&self, component: &str) -> Path {
         let mut path = self.0.clone();
         path.push(component);
         Path(path)
     }
 
-    pub fn is_child(self: &Path, parent: &Path) -> bool {
+    pub fn is_child(&self, parent: &Path) -> bool {
         self.0.starts_with(&parent.0)
     }
 }
