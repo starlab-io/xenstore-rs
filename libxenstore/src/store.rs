@@ -75,7 +75,7 @@ fn perms_ok(dom_id: wire::DomainId, permissions: &[Permission], perm: Perm) -> b
         return p.perm.allowed(&perm);
     }
 
-    return permissions[0].perm.allowed(&perm);
+    permissions[0].perm.allowed(&perm)
 }
 
 impl Node {
