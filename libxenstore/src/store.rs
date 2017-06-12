@@ -428,7 +428,7 @@ impl Store {
             };
 
             // And recursively remove all of its children
-            for child in node.children.iter() {
+            for child in &node.children {
                 let path = path.push(&child);
                 remove.push_back(path);
             }
