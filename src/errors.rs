@@ -32,6 +32,14 @@ pub mod tpm {
                 description("authorization failure without DA implications")
                 display("authorization failure without DA implications")
             }
+            Disabled {
+                description("TPM is disabled")
+                display("TPM is disabled")
+            }
+            Failure {
+                description("commands not accepted because of a TPM failure")
+                display("commands not accepted because of a TPM failure")
+            }
             Exclusive {
                 description("command failed because audit sequence required exclusivity")
                 display("command failed because audit sequence required exclusivity")
@@ -102,6 +110,10 @@ pub mod tpm {
             Range {
                 description("value was out of allowed range")
                 display("value was out of allowed range")
+            }
+            Reboot {
+                description("TPM init and startup(clear) is required for TPM to resume operation")
+                display("TPM init and startup(clear) is required for TPM to resume operation")
             }
             Scheme {
                 description("unsupported or incompatible scheme")

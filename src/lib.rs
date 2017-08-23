@@ -179,8 +179,17 @@ fn tss_err(err: sys::TSS2_RC) -> Result<()> {
                                 sys::TPM_RC_INITIALIZE => {
                                     tss_tpm_err!(errors::tpm::ErrorKind::Initialize)
                                 }
+                                sys::TPM_RC_FAILURE => {
+                                    tss_tpm_err!(errors::tpm::ErrorKind::Failure)
+                                }
+                                sys::TPM_RC_DISABLED => {
+                                    tss_tpm_err!(errors::tpm::ErrorKind::Disabled)
+                                }
                                 sys::TPM_RC_EXCLUSIVE => {
                                     tss_tpm_err!(errors::tpm::ErrorKind::Exclusive)
+                                }
+                                sys::TPM_RC_REBOOT => {
+                                    tss_tpm_err!(errors::tpm::ErrorKind::Reboot)
                                 }
                                 err => {
                                     Err(ErrorKind::Tpm(errors::tpm::ErrorKind::FormatZero(err))
